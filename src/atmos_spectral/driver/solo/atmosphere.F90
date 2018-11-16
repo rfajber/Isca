@@ -30,7 +30,7 @@ module atmosphere_mod
 use                  fms_mod, only: set_domain, write_version_number, field_size, file_exist, stdlog, &
                                     mpp_pe, mpp_root_pe, error_mesg, FATAL, read_data, write_data, nullify_domain
 
-use            constants_mod, only: grav, pi
+use            constants_mod, only: grav, pi, kappa
 
 use           transforms_mod, only: trans_grid_to_spherical, trans_spherical_to_grid, &
                                     get_deg_lon, get_deg_lat, get_grid_boundaries, grid_domain,    &
@@ -71,8 +71,8 @@ public :: atmosphere_init, atmosphere, atmosphere_end, atmosphere_domain
 
 !=================================================================================================================================
 logical :: idealized_moist_model = .false.
-
-namelist/atmosphere_nml/ idealized_moist_model
+logical :: heat_tag = .false. 
+namelist/atmosphere_nml/ idealized_moist_model,heat_tag
 
 !=================================================================================================================================
 
@@ -104,6 +104,9 @@ logical :: module_is_initialized =.false.
 integer         :: dt_integer
 real            :: dt_real
 type(time_type) :: Time_step
+
+!rf-ht
+integer :: n_tag_cond, n_tag_conv, n_tag_diff, n_tag_radi
 
 !=================================================================================================================================
 contains
@@ -145,6 +148,33 @@ allocate (tracer_attributes(num_tracers))
 call spectral_dynamics_init(Time, Time_step, tracer_attributes, dry_model, nhum)
 call get_grid_domain(is, ie, js, je)
 call get_num_levels(num_levels)
+
+!rf-ht get indices for all the different tracers
+do ntr = 1,num_tracers
+   tr_name = trim(tracer_attributes(ntr)%name)
+   if ( heat_tag) then
+      if (tr_name .eq. 'tag_O_cond') then
+         n_tag_cond=ntr
+      elseif (tr_name .eq. 'tag_O_conv') then
+         n_tag_conv=ntr
+      elseif (tr_name .eq. 'tag_O_diff') then
+         n_tag_diff=ntr
+      elseif (tr_name .eq. 'tag_O_radi') then
+         n_tag_radi=ntr
+      endif
+   else
+   !this is to help with debugging, if the tracer array is out of memory it means it wasn't initalized properly. 
+      n_tag_cond=999
+      n_tag_conv=999
+      n_tag_radi=999
+      n_tag_diff=999
+   endif
+enddo
+
+n_tag_cond=2
+n_tag_conv=3
+n_tag_diff=4
+n_tag_radi=5
 
 allocate (p_half       (is:ie, js:je, num_levels+1, num_time_levels))
 allocate (z_half       (is:ie, js:je, num_levels+1, num_time_levels))
@@ -202,7 +232,7 @@ if(file_exist(trim(file))) then
     call read_data(trim(file), 'tg',   tg(:,:,:,nt), grid_domain, timelevel=nt)
     call read_data(trim(file), 'psg', psg(:,:,  nt), grid_domain, timelevel=nt)
     do ntr = 1,num_tracers
-      tr_name = trim(tracer_attributes(ntr)%name)
+       tr_name = trim(tracer_attributes(ntr)%name)
       call read_data(trim(file), trim(tr_name), grid_tracers(:,:,:,nt,ntr), grid_domain, timelevel=nt)
     enddo ! end loop over tracers
   enddo ! end loop over time levels
@@ -226,6 +256,15 @@ else
        grid_tracers(:,:,:,previous,nhum))
 endif
 
+if(.not.(file_exist(trim(file)))) then
+!rf-ht: this is to set the radiation fraction initally to 1
+if (heat_tag) then
+      grid_tracers(:,:,:,current,n_tag_radi)=(1.e5/p_full(:,:,:,current))**kappa*tg(:,:,:,current)
+      grid_tracers(:,:,:,previous,n_tag_radi)=(1.e5/p_full(:,:,:,previous))**kappa*tg(:,:,:,previous)
+endif 
+   
+endif
+
 call get_deg_lon(deg_lon)
 do i=is,ie
   rad_lon_2d(i,:) = deg_lon(i)*pi/180.
@@ -247,7 +286,8 @@ do j = js,je+1
 enddo
 
 if(idealized_moist_model) then
-   call idealized_moist_phys_init(Time, Time_step, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, tg(:,:,num_levels,current))
+   call idealized_moist_phys_init(Time, Time_step, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, tg(:,:,num_levels,current), &
+   heat_tag,n_tag_cond,n_tag_conv,n_tag_diff,n_tag_radi) !rf-ht:add these as inputs here 
 else
    call hs_forcing_init(get_axis_id(), Time, rad_lonb_2d, rad_latb_2d, rad_lat_2d)
 endif

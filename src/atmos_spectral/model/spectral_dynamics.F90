@@ -32,7 +32,7 @@ use                fms_mod, only: mpp_pe, mpp_root_pe, error_mesg, NOTE, FATAL, 
                                   read_data, write_data, check_nml_error, lowercase, uppercase, mpp_npes,     &
                                   field_size
 
-use          constants_mod, only: rdgas, rvgas, grav, cp_air, omega, radius, pi
+use          constants_mod, only: rdgas, rvgas, grav, cp_air, omega, radius, pi, kappa
 
 use       time_manager_mod, only: time_type, get_time, set_time, get_calendar_type, NO_CALENDAR, &
                                   get_date, interval_alarm, operator( - ), operator( + )
@@ -107,6 +107,7 @@ character(len=128), parameter :: tagname = '$Name: siena_201211 $'
 integer :: id_ps, id_u, id_v, id_t, id_vor, id_div, id_omega, id_wspd, id_slp
 integer :: id_pres_full, id_pres_half, id_zfull, id_zhalf, id_vort_norm, id_EKE
 integer :: id_uu, id_vv, id_tt, id_omega_omega, id_uv, id_omega_t, id_vw, id_uw, id_ut, id_vt, id_v_vor, id_uz, id_vz, id_omega_z
+integer :: id_theta !rf-ht 
 integer, allocatable, dimension(:) :: id_tr, id_utr, id_vtr, id_wtr !extra advection diags added by RG
 real :: gamma, expf, expf_inverse
 character(len=8) :: mod_name = 'dynamics'
@@ -1703,6 +1704,9 @@ enddo
 id_vort_norm = register_diag_field(mod_name, 'vort_norm', Time, 'vorticity norm', '1/(m*sec)')
 id_EKE       = register_diag_field(mod_name, 'EKE', Time, 'eddy kinetic energy', 'J/m^2')
 
+id_theta   = register_diag_field(mod_name, &
+     'theta',    axes_3d_full,       Time,  'potential temperature',        'deg_k')
+
 return
 end subroutine spectral_diagnostics_init
 !===================================================================================
@@ -1743,6 +1747,10 @@ if(id_zfull > 0)   used = send_data(id_zfull,      z_full, Time)
 if(id_zhalf > 0)   used = send_data(id_zhalf,      z_half, Time)
 if(id_pres_full>0) used = send_data(id_pres_full,  p_full, Time)
 if(id_pres_half>0) used = send_data(id_pres_half,  p_half, Time)
+
+!rf-ht
+worka3d=t_grid*(1.e5/p_full)**kappa
+if (id_theta>0) used = send_data(id_theta,worka3d,Time) 
 
 if(id_wspd > 0) then
   worka3d = sqrt(u_grid**2 + v_grid**2)
@@ -1861,8 +1869,8 @@ if(id_EKE > 0) then
   call uv_grid_from_vor_div(vor_spec, div_spec, worka3d, workb3d)
   EKE = mass_weighted_global_integral(.5*(worka3d**2 + workb3d**2), p_surf)
   used = send_data(id_EKE, EKE, Time)
-endif
-
+endif   
+   
 return
 end subroutine spectral_diagnostics
 !===================================================================================

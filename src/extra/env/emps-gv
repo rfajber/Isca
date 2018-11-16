@@ -1,9 +1,10 @@
 echo loadmodules for emps-gv machines
 
 module purge
-module load hdf5/1.8.11
-module load netcdf-4.3.3.1-openmpi-intel
-module load git/2.1.2
+module load netcdf/4.4.1.1
+module load netcdf-fortran/4.4.4
+module load netcdf-c++/4.2
+module load scipy-stack/2018b
 
 export F90=mpifort
 export CC=mpicc

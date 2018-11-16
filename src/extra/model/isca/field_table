@@ -8,3 +8,38 @@
           "robert_filter",            "on"
           "profile_type", "fixed",   "surface_value=0.0" /
 
+"TRACER", "atmos_mod", "tag_O_cond"
+          "longname",  "tag_O_condensation"
+          "units",     "K"
+          "numerical_representation", "grid"
+          "hole_filling",             "on"
+          "advect_vert",              "finite_volume_parabolic"
+          "robert_filter",            "on"
+          "profile_type", "fixed",   "surface_value=0.0" /
+
+"TRACER", "atmos_mod", "tag_O_conv"
+          "longname",  "tag_O_convection"
+          "units",     "K"
+          "numerical_representation", "grid"
+          "hole_filling",             "on"
+          "advect_vert",              "finite_volume_parabolic"
+          "robert_filter",            "on"
+          "profile_type", "fixed",   "surface_value=0.0" /
+
+"TRACER", "atmos_mod", "tag_O_diff"
+          "longname",  "tag_O_diffusion"
+          "units",     "K"
+          "numerical_representation", "grid"
+          "hole_filling",             "on"
+          "advect_vert",              "finite_volume_parabolic"
+          "robert_filter",            "on"
+          "profile_type", "fixed",   "surface_value=0.0" /
+
+"TRACER", "atmos_mod", "tag_O_radi"
+          "longname",  "tag_O_radiation"
+          "units",     "K"
+          "numerical_representation", "grid"
+          "hole_filling",             "on"
+          "advect_vert",              "finite_volume_parabolic"
+          "robert_filter",            "on"
+          "profile_type", "fixed",   "surface_value=0.0" /

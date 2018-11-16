@@ -8,7 +8,7 @@ module idealized_moist_phys_mod
 
 use fms_mod, only: write_version_number, file_exist, close_file, stdlog, error_mesg, NOTE, FATAL, read_data, field_size, uppercase, mpp_pe
 
-use           constants_mod, only: grav, rdgas, rvgas, cp_air, PSTD_MKS, dens_h2o !mj cp_air needed for rrtmg !s pstd_mks needed for pref calculation
+use           constants_mod, only: grav, rdgas, rvgas, cp_air, PSTD_MKS, dens_h2o, kappa !mj cp_air needed for rrtmg !s pstd_mks needed for pref calculation
 
 use        time_manager_mod, only: time_type, get_time, operator( + )
 
@@ -84,7 +84,7 @@ public :: idealized_moist_phys_init , idealized_moist_phys , idealized_moist_phy
 
 logical :: module_is_initialized =.false.
 logical :: turb = .false.
-logical :: do_virtual = .false. ! whether virtual temp used in gcm_vert_diff
+logical :: do_virtual = .false.!  whether virtual temp used in gcm_vert_diff
 
 !s Convection scheme options
 character(len=256) :: convection_scheme = 'unset'  !< Use a specific convection scheme.  Valid options
@@ -204,6 +204,17 @@ real, allocatable, dimension(:,:,:) ::                                        &
      cond_dt_tg,           &   ! temperature tendency from condensation
      cond_dt_qg                ! moisture tendency from condensation
 
+!rf-ht
+real, allocatable, dimension(:,:,:) ::                                        &
+     dt_tgp_cond, &
+     dt_tgp_conv, &
+     dt_tgp_diff, &
+     dt_tgp_radi, &
+     dt_tgn_cond, &
+     dt_tgn_conv, &
+     dt_tgn_diff, &
+     dt_tgn_radi
+     
 
 logical, allocatable, dimension(:,:) ::                                       &
      avail,                &   ! generate surf. flux (all true)
@@ -254,6 +265,13 @@ integer ::           &
      id_cape,        &
      id_cin
 
+!rf-ht
+integer :: id_dt_tgp_cond,id_dt_tgp_conv,id_dt_tgp_diff,id_dt_tgp_radi,id_dt_tgn_cond,id_dt_tgn_conv,id_dt_tgn_radi,id_dt_tgn_diff, id_theta
+logical :: heat_tag=.true.
+integer :: n_tag_cond,n_tag_conv,n_tag_radi,n_tag_diff
+real, allocatable, dimension(:,:,:) :: O_over_T, sink_over_tracer
+real, allocatable, dimension(:,:,:) :: dt_tg_rad
+
 integer, allocatable, dimension(:,:) :: convflag ! indicates which qe convection subroutines are used
 real,    allocatable, dimension(:,:) :: rad_lat, rad_lon
 real,    allocatable, dimension(:) :: pref, p_half_1d, ln_p_half_1d, p_full_1d,ln_p_full_1d !s pref is a reference pressure profile, which in 2006 MiMA is just the initial full pressure levels, and an extra level with the reference surface pressure. Others are only necessary to calculate pref.
@@ -275,9 +293,16 @@ type(time_type) :: Time_step
 contains
 !=================================================================================================================================
 
-subroutine idealized_moist_phys_init(Time, Time_step_in, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, t_surf_init)
+subroutine idealized_moist_phys_init(Time, Time_step_in, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, t_surf_init, &
+    heat_tag_in,n_tag_cond_in,n_tag_conv_in,n_tag_radi_in,n_tag_diff_in) !rf-ht
 type(time_type), intent(in) :: Time, Time_step_in
 integer, intent(in) :: nhum
+
+!rf-ht
+integer,intent(in):: n_tag_cond_in,n_tag_conv_in,n_tag_radi_in,n_tag_diff_in
+logical,intent(in):: heat_tag_in
+
+
 real, intent(in), dimension(:,:) :: rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, t_surf_init
 
 integer :: io, nml_unit, stdlog_unit, seconds, days, id, jd, kd
@@ -297,6 +322,7 @@ logical, dimension(:), allocatable :: tracers_in_ras
 
 character(len=80)  :: scheme
 ! End Added for RAS
+
 
 if(module_is_initialized) return
 
@@ -480,6 +506,19 @@ allocate(pref(num_levels+1)) !s reference pressure profile, as in spectral_physi
 allocate(p_half_1d(num_levels+1), ln_p_half_1d(num_levels+1))
 allocate(p_full_1d(num_levels  ), ln_p_full_1d(num_levels  ))
 allocate(capeflag     (is:ie, js:je))
+
+!rf-ht
+allocate(dt_tg_rad (is:ie, js:je, num_levels)); dt_tg_rad = 0.0
+allocate(dt_tgp_cond (is:ie, js:je, num_levels)); dt_tgp_cond = 0.0
+allocate(dt_tgp_conv (is:ie, js:je, num_levels)); dt_tgp_conv = 0.0
+allocate(dt_tgp_diff (is:ie, js:je, num_levels)); dt_tgp_diff = 0.0
+allocate(dt_tgp_radi (is:ie, js:je, num_levels)); dt_tgp_radi = 0.0
+allocate(dt_tgn_cond (is:ie, js:je, num_levels)); dt_tgn_cond = 0.0
+allocate(dt_tgn_conv (is:ie, js:je, num_levels)); dt_tgn_conv = 0.0
+allocate(dt_tgn_diff (is:ie, js:je, num_levels)); dt_tgn_diff = 0.0
+allocate(dt_tgn_radi (is:ie, js:je, num_levels)); dt_tgn_radi = 0.0
+allocate (O_over_T       (is:ie, js:je, num_levels))
+allocate (sink_over_tracer       (is:ie, js:je, num_levels))
 
 call get_surf_geopotential(z_surf)
 z_surf = z_surf/grav
@@ -712,6 +751,34 @@ endif
    id_rh = register_diag_field ( mod_name, 'rh', &
 	axes(1:3), Time, 'relative humidity', 'percent')
 
+!rf-ht: outputs for tendency terms
+   id_theta = register_diag_field(mod_name,'theta', &
+        axes(1:3), Time , 'potential temperature', 'K')
+   id_dt_tgp_cond = register_diag_field(mod_name,'dt_tgp_cond',&
+        axes(1:3), Time, 'positive temperature tendency condensation', 'K/s')
+   id_dt_tgp_conv = register_diag_field(mod_name,'dt_tgp_conv',&
+        axes(1:3), Time, 'positive temperature tendency convection', 'K/s')
+   id_dt_tgp_diff = register_diag_field(mod_name,'dt_tgp_diff',&
+        axes(1:3), Time, 'positive temperature tendency diffusion', 'K/s')
+   id_dt_tgp_radi = register_diag_field(mod_name,'dt_tgp_radi',&
+        axes(1:3), Time, 'positive temperature tendency radiation', 'K/s')
+   id_dt_tgn_cond = register_diag_field(mod_name,'dt_tgn_cond',&
+        axes(1:3), Time, 'negative temperature tendency condensation', 'K/s')
+   id_dt_tgn_conv = register_diag_field(mod_name,'dt_tgn_conv',&
+        axes(1:3), Time, 'negative temperature tendency convection', 'K/s')
+   id_dt_tgn_diff = register_diag_field(mod_name,'dt_tgn_diff',&
+        axes(1:3), Time, 'negative temperature tendency diffusion', 'K/s')
+   id_dt_tgn_radi = register_diag_field(mod_name,'dt_tgn_radi',&
+        axes(1:3), Time, 'negative temperature tendency radiation', 'K/s')
+
+   heat_tag=heat_tag_in
+   n_tag_cond=n_tag_cond_in
+   n_tag_conv=n_tag_conv_in
+   n_tag_radi=n_tag_radi_in
+   n_tag_diff=n_tag_diff_in
+
+   print*, 'idealized_moist_phys_init_complete'
+   
 end subroutine idealized_moist_phys_init
 !=================================================================================================================================
 subroutine idealized_moist_phys(Time, p_half, p_full, z_half, z_full, ug, vg, tg, grid_tracers, &
@@ -746,6 +813,20 @@ if (bucket) then
 endif
 
 rain = 0.0; snow = 0.0; precip = 0.0
+
+!rf-ht
+dt_tgp_cond=0.0; dt_tgp_conv=0.0; dt_tgp_diff=0.0; dt_tgp_radi=0.0;
+
+!print*, 'before conv'
+!print*, 'n'
+!print*, heat_tag
+!print*, nsphum
+!print*, n_tag_cond
+!print*, n_tag_conv
+!print*, n_tag_diff
+!print*, n_tag_radi
+
+!print*, tg(0,0,0,previous)
 
 select case(r_conv_scheme)
 
@@ -861,6 +942,13 @@ end select
 dt_tg = dt_tg + conv_dt_tg
 dt_tracers(:,:,:,nsphum) = dt_tracers(:,:,:,nsphum) + conv_dt_qg
 
+!rf-ht: conv tend
+if (heat_tag) then 
+   where(conv_dt_tg>0) dt_tgp_conv = conv_dt_tg
+   where(conv_dt_tg<0) dt_tgn_conv = conv_dt_tg
+endif 
+
+!print*, 'before cond'
 
 ! Perform large scale convection
 if (r_conv_scheme .ne. DRY_CONV) then
@@ -890,9 +978,18 @@ if (r_conv_scheme .ne. DRY_CONV) then
 
 endif
 
+!rf-ht: cond tend
+if (heat_tag) then 
+   where(cond_dt_tg>0) dt_tgp_cond = cond_dt_tg
+   where(cond_dt_tg<0) dt_tgn_cond = cond_dt_tg
+endif 
+
+
 
 ! Begin the radiation calculation by computing downward fluxes.
 ! This part of the calculation does not depend on the surface temperature.
+
+!print*, 'before rad'
 
 if(two_stream_gray) then
    call two_stream_gray_rad_down(is, js, Time, &
@@ -907,7 +1004,7 @@ end if
 
 if(.not.mixed_layer_bc) then
 
-!!$! infinite heat capacity
+!!$! ininfite heat capacity
 !    t_surf = surface_temperature_forced(rad_lat)
 !!$! no heat capacity:
 !!$   t_surf = tg(:,:,num_levels,previous)
@@ -969,13 +1066,14 @@ endif
 
 ! Now complete the radiation calculation by computing the upward and net fluxes.
 
+
 if(two_stream_gray) then
    call two_stream_gray_rad_up(is, js, Time, &
                      rad_lat(:,:),           &
                      p_half(:,:,:,current),  &
                      t_surf(:,:),            &
                      tg(:,:,:,previous),     &
-                     dt_tg(:,:,:), albedo)
+                     dt_tg(:,:,:), dt_tg_rad, albedo)
 end if
 
 #ifdef RRTM_NO_COMPILE
@@ -991,6 +1089,12 @@ if(do_rrtm_radiation) then
 endif
 #endif
 
+!rf-ht radiation tendency
+!reusing the non_diff varirable to mean without radiation here 
+if (heat_tag) then 
+   where(dt_tg_rad>0) dt_tgp_radi = dt_tg_rad
+   where(dt_tg_rad<0) dt_tgn_radi = dt_tg_rad
+endif 
 
 
 if(gp_surface) then
@@ -1123,16 +1227,24 @@ if(turb) then
 
    call gcm_vert_diff_up (1, 1, delta_t, Tri_surf, dt_tg(:,:,:), dt_tracers(:,:,:,nsphum), dt_tracers(:,:,:,:))
 
+   
    if(id_diff_dt_ug > 0) used = send_data(id_diff_dt_ug, dt_ug - non_diff_dt_ug, Time)
    if(id_diff_dt_vg > 0) used = send_data(id_diff_dt_vg, dt_vg - non_diff_dt_vg, Time)
    if(id_diff_dt_tg > 0) used = send_data(id_diff_dt_tg, dt_tg - non_diff_dt_tg, Time)
    if(id_diff_dt_qg > 0) used = send_data(id_diff_dt_qg, dt_tracers(:,:,:,nsphum) - non_diff_dt_qg, Time)
 
+   !rf-ht: diffusion tendency
+   if (heat_tag) then 
+      where((dt_tg-non_diff_dt_tg)>0) dt_tgp_diff = dt_tg-non_diff_dt_tg
+      where((dt_tg-non_diff_dt_tg)<0) dt_tgn_diff = dt_tg-non_diff_dt_tg
+   endif
+
+   
 endif ! if(turb) then
 
 !s Adding relative humidity calculation so as to allow comparison with Frierson's thesis.
-   call rh_calc (p_full(:,:,:,previous),tg_tmp,qg_tmp,RH)
-   if(id_rh >0) used = send_data(id_rh, RH*100., Time)
+!   call rh_calc (p_full(:,:,:,previous),tg_tmp,qg_tmp,RH)
+!   if(id_rh >0) used = send_data(id_rh, RH*100., Time)
 
 
 ! RG Add bucket
@@ -1188,7 +1300,30 @@ endif
 ! end Add bucket section
 
 
+!rf-ht this is where we calculate the tendencies
+if (heat_tag) then
+   
+   O_over_T = (1.e5/p_full(:,:,:,previous))**kappa
+   sink_over_tracer = (dt_tgn_cond+dt_tgn_diff+dt_tgn_radi+dt_tgn_conv) / (tg(:,:,:,previous)*O_over_T)
+   
+   dt_tracers(:,:,:,n_tag_cond) = O_over_T * dt_tgp_cond + grid_tracers(:,:,:,previous,n_tag_cond) * sink_over_tracer
+   dt_tracers(:,:,:,n_tag_conv) = O_over_T * dt_tgp_conv + grid_tracers(:,:,:,previous,n_tag_conv) * sink_over_tracer
+   dt_tracers(:,:,:,n_tag_diff) = O_over_T * dt_tgp_diff + grid_tracers(:,:,:,previous,n_tag_diff) * sink_over_tracer
+   dt_tracers(:,:,:,n_tag_radi) = O_over_T * dt_tgp_radi + grid_tracers(:,:,:,previous,n_tag_radi) * sink_over_tracer
 
+   if(id_theta>0) used = send_data(id_theta,O_over_T*tg(:,:,:,previous),Time)
+
+   if(id_dt_tgp_cond>0) used = send_data(id_dt_tgp_cond,dt_tgp_cond,Time)
+   if(id_dt_tgp_conv>0) used = send_data(id_dt_tgp_conv,dt_tgp_conv,Time)
+   if(id_dt_tgp_diff>0) used = send_data(id_dt_tgp_diff,dt_tgp_diff,Time)
+   if(id_dt_tgp_radi>0) used = send_data(id_dt_tgp_radi,dt_tgp_radi,Time)
+
+   if(id_dt_tgn_cond>0) used = send_data(id_dt_tgn_cond,dt_tgn_cond,Time)
+   if(id_dt_tgn_conv>0) used = send_data(id_dt_tgn_conv,dt_tgn_conv,Time)
+   if(id_dt_tgn_diff>0) used = send_data(id_dt_tgn_diff,dt_tgn_diff,Time)
+   if(id_dt_tgn_radi>0) used = send_data(id_dt_tgn_radi,dt_tgn_radi,Time)
+
+endif
 
 end subroutine idealized_moist_phys
 !=================================================================================================================================

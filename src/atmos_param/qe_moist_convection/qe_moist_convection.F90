@@ -243,7 +243,7 @@ contains
     ! Check whether initialization has been completed
     if (do_init) call error_mesg ('qe_moist_convection',  &
          'qe_moist_convection_init has not been called.', FATAL)
-    
+
     ! Call the convection scheme itself
     call SBM_convection_scheme(dt, Tin, qin, p_full, p_half, rain, snow, &
          deltaT, deltaq, kLZBs, CAPE, CIN,invtau_q_relaxation,           &

@@ -654,7 +654,7 @@ end subroutine two_stream_gray_rad_down
 
 ! ==================================================================================
 
-subroutine two_stream_gray_rad_up (is, js, Time_diag, lat, p_half, t_surf, t, tdt, albedo)
+subroutine two_stream_gray_rad_up (is, js, Time_diag, lat, p_half, t_surf, t, tdt, tdt_rad_out, albedo)
 
 ! Now complete the radiation calculation by computing the upward and net fluxes.
 
@@ -664,7 +664,7 @@ real, intent(in) , dimension(:,:)   :: lat, albedo
 real, intent(in) , dimension(:,:)   :: t_surf
 real, intent(in) , dimension(:,:,:) :: t, p_half
 real, intent(inout), dimension(:,:,:) :: tdt
-
+real, intent(inout), dimension(:,:,:) :: tdt_rad_out
 
 integer :: i, j, k, n
 
@@ -724,6 +724,8 @@ do k = 1, n
 
    tdt(:,:,k) = tdt(:,:,k) + tdt_rad(:,:,k)
 end do
+
+tdt_rad_out=tdt_rad
 
 olr         = lw_up(:,:,1)
 net_lw_surf = lw_flux(:, :, n+1)
