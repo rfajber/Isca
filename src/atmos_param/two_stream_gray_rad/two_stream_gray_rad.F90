@@ -673,6 +673,8 @@ logical :: used
 n = size(t,3)
 b_surf            = stefan*t_surf**4
 
+tdt_rad_out=0
+
 select case(lw_scheme)
 case(B_GEEN)
   ! integrate upward, including window contribution
@@ -723,9 +725,8 @@ do k = 1, n
         * grav/( cp_air*(p_half(:,:,k+1) - p_half(:,:,k)) )
 
    tdt(:,:,k) = tdt(:,:,k) + tdt_rad(:,:,k)
-end do
 
-tdt_rad_out=tdt_rad
+end do
 
 olr         = lw_up(:,:,1)
 net_lw_surf = lw_flux(:, :, n+1)
@@ -771,6 +772,9 @@ endif
 if ( id_sw_dtrans > 0 ) then
    used = send_data ( id_sw_dtrans, sw_dtrans, Time_diag)
 endif
+
+
+tdt_rad_out=tdt_rad
 
 return
 end subroutine two_stream_gray_rad_up

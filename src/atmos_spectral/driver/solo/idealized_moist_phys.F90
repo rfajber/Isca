@@ -134,6 +134,9 @@ real :: robert_bucket = 0.04   ! default robert coefficient for bucket depth LJJ
 real :: raw_bucket = 0.53       ! default raw coefficient for bucket depth LJJ
 ! end RG Add bucket
 
+!rf-ht
+real :: a_small_number=1e-6
+
 namelist / idealized_moist_phys_nml / turb, lwet_convection, do_bm, do_ras, roughness_heat,  &
                                       two_stream_gray, do_rrtm_radiation, do_damping,&
                                       mixed_layer_bc, do_simple,                     &
@@ -1238,7 +1241,6 @@ if(turb) then
       where((dt_tg-non_diff_dt_tg)>0) dt_tgp_diff = dt_tg-non_diff_dt_tg
       where((dt_tg-non_diff_dt_tg)<0) dt_tgn_diff = dt_tg-non_diff_dt_tg
    endif
-
    
 endif ! if(turb) then
 
@@ -1304,7 +1306,7 @@ endif
 if (heat_tag) then
    
    O_over_T = (1.e5/p_full(:,:,:,previous))**kappa
-   sink_over_tracer = (dt_tgn_cond+dt_tgn_diff+dt_tgn_radi+dt_tgn_conv) / (tg(:,:,:,previous)*O_over_T)
+   sink_over_tracer = (dt_tgn_cond+dt_tgn_diff+dt_tgn_radi+dt_tgn_conv) / ( tg(:,:,:,previous) + a_small_number )
    
    dt_tracers(:,:,:,n_tag_cond) = O_over_T * dt_tgp_cond + grid_tracers(:,:,:,previous,n_tag_cond) * sink_over_tracer
    dt_tracers(:,:,:,n_tag_conv) = O_over_T * dt_tgp_conv + grid_tracers(:,:,:,previous,n_tag_conv) * sink_over_tracer

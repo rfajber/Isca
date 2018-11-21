@@ -150,26 +150,26 @@ call get_grid_domain(is, ie, js, je)
 call get_num_levels(num_levels)
 
 !rf-ht get indices for all the different tracers
-do ntr = 1,num_tracers
-   tr_name = trim(tracer_attributes(ntr)%name)
-   if ( heat_tag) then
-      if (tr_name .eq. 'tag_O_cond') then
-         n_tag_cond=ntr
-      elseif (tr_name .eq. 'tag_O_conv') then
-         n_tag_conv=ntr
-      elseif (tr_name .eq. 'tag_O_diff') then
-         n_tag_diff=ntr
-      elseif (tr_name .eq. 'tag_O_radi') then
-         n_tag_radi=ntr
-      endif
-   else
-   !this is to help with debugging, if the tracer array is out of memory it means it wasn't initalized properly. 
-      n_tag_cond=999
-      n_tag_conv=999
-      n_tag_radi=999
-      n_tag_diff=999
-   endif
-enddo
+!do ntr = 1,num_tracers
+!   tr_name = trim(tracer_attributes(ntr)%name)
+!   if ( heat_tag) then
+!      if (tr_name .eq. 'tag_O_cond') then
+!         n_tag_cond=ntr
+!      elseif (tr_name .eq. 'tag_O_conv') then
+!         n_tag_conv=ntr
+!      elseif (tr_name .eq. 'tag_O_diff') then
+!         n_tag_diff=ntr
+!      elseif (tr_name .eq. 'tag_O_radi') then
+!         n_tag_radi=ntr
+!      endif
+!   else
+!   !this is to help with debugging, if the tracer array is out of memory it means it wasn't initalized properly. 
+!      n_tag_cond=999
+!      n_tag_conv=999
+!      n_tag_radi=999
+!      n_tag_diff=999
+!   endif
+!enddo
 
 n_tag_cond=2
 n_tag_conv=3
@@ -256,14 +256,13 @@ else
        grid_tracers(:,:,:,previous,nhum))
 endif
 
-if(.not.(file_exist(trim(file)))) then
+!if(.not.(file_exist(trim(file)))) then
 !rf-ht: this is to set the radiation fraction initally to 1
-if (heat_tag) then
-      grid_tracers(:,:,:,current,n_tag_radi)=(1.e5/p_full(:,:,:,current))**kappa*tg(:,:,:,current)
-      grid_tracers(:,:,:,previous,n_tag_radi)=(1.e5/p_full(:,:,:,previous))**kappa*tg(:,:,:,previous)
-endif 
-   
-endif
+!if (heat_tag) then
+!      grid_tracers(:,:,:,current,n_tag_radi)=(1.e5/p_full(:,:,:,current))**kappa*tg(:,:,:,current)
+!      grid_tracers(:,:,:,previous,n_tag_radi)=(1.e5/p_full(:,:,:,previous))**kappa*tg(:,:,:,previous)
+!endif   
+!endif
 
 call get_deg_lon(deg_lon)
 do i=is,ie
