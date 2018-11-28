@@ -270,6 +270,7 @@ integer ::           &
 
 !rf-ht
 integer :: id_dt_tgp_cond,id_dt_tgp_conv,id_dt_tgp_diff,id_dt_tgp_radi,id_dt_tgn_cond,id_dt_tgn_conv,id_dt_tgn_radi,id_dt_tgn_diff, id_theta
+integer :: id_dt_tg, id_dt_tg_non_diffuse
 logical :: heat_tag=.true.
 integer :: n_tag_cond,n_tag_conv,n_tag_radi,n_tag_diff
 real, allocatable, dimension(:,:,:) :: O_over_T, sink_over_tracer
@@ -297,7 +298,7 @@ contains
 !=================================================================================================================================
 
 subroutine idealized_moist_phys_init(Time, Time_step_in, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, t_surf_init, &
-    heat_tag_in,n_tag_cond_in,n_tag_conv_in,n_tag_radi_in,n_tag_diff_in) !rf-ht
+    heat_tag_in,n_tag_cond_in,n_tag_conv_in,n_tag_diff_in,n_tag_radi_in) !rf-ht
 type(time_type), intent(in) :: Time, Time_step_in
 integer, intent(in) :: nhum
 
@@ -757,6 +758,10 @@ endif
 !rf-ht: outputs for tendency terms
    id_theta = register_diag_field(mod_name,'theta', &
         axes(1:3), Time , 'potential temperature', 'K')
+   id_dt_tg = register_diag_field(mod_name,'dt_tg',&
+        axes(1:3), Time, 'temperature tendency', 'K/s')
+   id_dt_tg_non_diffuse = register_diag_field(mod_name,'dt_tg_non_diffuse',&
+        axes(1:3), Time, 'non diffusive temperature tendency', 'K/s')
    id_dt_tgp_cond = register_diag_field(mod_name,'dt_tgp_cond',&
         axes(1:3), Time, 'positive temperature tendency condensation', 'K/s')
    id_dt_tgp_conv = register_diag_field(mod_name,'dt_tgp_conv',&
@@ -819,6 +824,7 @@ rain = 0.0; snow = 0.0; precip = 0.0
 
 !rf-ht
 dt_tgp_cond=0.0; dt_tgp_conv=0.0; dt_tgp_diff=0.0; dt_tgp_radi=0.0;
+dt_tgn_cond=0.0; dt_tgn_conv=0.0; dt_tgn_diff=0.0; dt_tgn_radi=0.0;
 
 !print*, 'before conv'
 !print*, 'n'
@@ -945,11 +951,19 @@ end select
 dt_tg = dt_tg + conv_dt_tg
 dt_tracers(:,:,:,nsphum) = dt_tracers(:,:,:,nsphum) + conv_dt_qg
 
-!rf-ht: conv tend
-if (heat_tag) then 
-   where(conv_dt_tg>0) dt_tgp_conv = conv_dt_tg
-   where(conv_dt_tg<0) dt_tgn_conv = conv_dt_tg
+!rf-ht: cond tend
+if (heat_tag) then
+   where (conv_dt_tg .gt. 0.)
+      dt_tgp_conv = dt_tgp_conv + conv_dt_tg
+   elsewhere
+      dt_tgn_conv = dt_tgn_conv + conv_dt_tg
+   endwhere
 endif 
+!rf-ht: conv tend
+!if (heat_tag) then 
+!   where(conv_dt_tg>0) dt_tgp_conv = conv_dt_tg
+!   where(conv_dt_tg<0) dt_tgn_conv = conv_dt_tg
+!endif 
 
 !print*, 'before cond'
 
@@ -982,9 +996,12 @@ if (r_conv_scheme .ne. DRY_CONV) then
 endif
 
 !rf-ht: cond tend
-if (heat_tag) then 
-   where(cond_dt_tg>0) dt_tgp_cond = cond_dt_tg
-   where(cond_dt_tg<0) dt_tgn_cond = cond_dt_tg
+if (heat_tag) then
+   where (cond_dt_tg .gt. 0.)
+      dt_tgp_cond = dt_tgp_cond + cond_dt_tg
+   elsewhere
+      dt_tgn_cond = dt_tgn_cond + cond_dt_tg
+   endwhere
 endif 
 
 
@@ -1093,11 +1110,18 @@ endif
 #endif
 
 !rf-ht radiation tendency
-!reusing the non_diff varirable to mean without radiation here 
-if (heat_tag) then 
-   where(dt_tg_rad>0) dt_tgp_radi = dt_tg_rad
-   where(dt_tg_rad<0) dt_tgn_radi = dt_tg_rad
+if (heat_tag) then
+   where (dt_tg_rad .gt. 0.)
+      dt_tgp_radi = dt_tgp_radi + dt_tg_rad
+   elsewhere
+      dt_tgn_radi = dt_tgn_radi + dt_tg_rad
+   endwhere
 endif 
+
+!if (heat_tag) then 
+!   where(dt_tg_rad>0) dt_tgp_radi = dt_tg_rad
+!   where(dt_tg_rad<0) dt_tgn_radi = dt_tg_rad
+!endif 
 
 
 if(gp_surface) then
@@ -1237,10 +1261,19 @@ if(turb) then
    if(id_diff_dt_qg > 0) used = send_data(id_diff_dt_qg, dt_tracers(:,:,:,nsphum) - non_diff_dt_qg, Time)
 
    !rf-ht: diffusion tendency
-   if (heat_tag) then 
-      where((dt_tg-non_diff_dt_tg)>0) dt_tgp_diff = dt_tg-non_diff_dt_tg
-      where((dt_tg-non_diff_dt_tg)<0) dt_tgn_diff = dt_tg-non_diff_dt_tg
-   endif
+   if (heat_tag) then
+      where ((dt_tg-non_diff_dt_tg) .gt. 0.)
+         dt_tgp_diff = dt_tgp_diff + (dt_tg-non_diff_dt_tg)
+      elsewhere
+         dt_tgn_diff = dt_tgn_diff + (dt_tg-non_diff_dt_tg)
+      endwhere
+   endif 
+
+
+!   if (heat_tag) then 
+!      where((dt_tg-non_diff_dt_tg)>0) dt_tgp_diff = dt_tg-non_diff_dt_tg
+!      where((dt_tg-non_diff_dt_tg)<0) dt_tgn_diff = dt_tg-non_diff_dt_tg
+!   endif
    
 endif ! if(turb) then
 
@@ -1314,6 +1347,9 @@ if (heat_tag) then
    dt_tracers(:,:,:,n_tag_radi) = O_over_T * dt_tgp_radi + grid_tracers(:,:,:,previous,n_tag_radi) * sink_over_tracer
 
    if(id_theta>0) used = send_data(id_theta,O_over_T*tg(:,:,:,previous),Time)
+
+   if(id_dt_tg>0) used = send_data(id_dt_tg,dt_tg,Time)
+   if(id_dt_tg_non_diffuse>0) used = send_data(id_dt_tg_non_diffuse,non_diff_dt_tg,Time)
 
    if(id_dt_tgp_cond>0) used = send_data(id_dt_tgp_cond,dt_tgp_cond,Time)
    if(id_dt_tgp_conv>0) used = send_data(id_dt_tgp_conv,dt_tgp_conv,Time)
