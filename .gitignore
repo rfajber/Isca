@@ -27,3 +27,11 @@ src/extra/python/scripts/archived/
 mima_pz.txt
 test/.cache
 test/results.xml
+*.out
+exp/debug/*
+exp/hs_Ferrel/*
+exp/isca_restart_test/*
+exp/run_isca/old/*
+exp/run_isca/out/*
+src/extra/python/*
+
