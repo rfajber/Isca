@@ -71,8 +71,9 @@ public :: atmosphere_init, atmosphere, atmosphere_end, atmosphere_domain
 
 !=================================================================================================================================
 logical :: idealized_moist_model = .false.
-logical :: heat_tag = .false. 
-namelist/atmosphere_nml/ idealized_moist_model,heat_tag
+logical :: heat_tag = .false.
+logical :: spinup_restart = .false.
+namelist/atmosphere_nml/ idealized_moist_model,heat_tag,spinup_restart
 
 !=================================================================================================================================
 
@@ -145,7 +146,7 @@ dt_real      = float(dt_integer)
 
 call get_number_tracers(MODEL_ATMOS, num_prog=num_tracers)
 allocate (tracer_attributes(num_tracers))
-call spectral_dynamics_init(Time, Time_step, tracer_attributes, dry_model, nhum)
+call spectral_dynamics_init(Time, Time_step, tracer_attributes, dry_model, nhum,heat_tag)
 call get_grid_domain(is, ie, js, je)
 call get_num_levels(num_levels)
 
@@ -237,6 +238,15 @@ if(file_exist(trim(file))) then
     enddo ! end loop over tracers
   enddo ! end loop over time levels
   call read_data(trim(file), 'wg_full', wg_full, grid_domain)
+
+  !rf - add_flag
+  if (spinup_restart) then
+        grid_tracers(:,:,:,:,5)=grid_tracers(:,:,:,:,2)+grid_tracers(:,:,:,:,3)+grid_tracers(:,:,:,:,4)+grid_tracers(:,:,:,:,5)
+        grid_tracers(:,:,:,:,4)=0.
+        grid_tracers(:,:,:,:,3)=0.
+        grid_tracers(:,:,:,:,2)=0.
+  endif
+  
 else
   previous = 1; current = 1
   call get_initial_fields(ug(:,:,:,1), vg(:,:,:,1), tg(:,:,:,1), psg(:,:,1), grid_tracers(:,:,:,1,:))
@@ -291,6 +301,13 @@ else
    call hs_forcing_init(get_axis_id(), Time, rad_lonb_2d, rad_latb_2d, rad_lat_2d)
 endif
 
+!if(.not.(file_exist(trim(file)))) then
+!   if (heat_tag) then
+!      grid_tracers(:,:,:,previous,n_tag_radi)=tg(:,:,:,previous)*(1.e5/p_full(:,:,:,previous))**kappa
+!      grid_tracers(:,:,:,current,n_tag_radi)=tg(:,:,:,current)*(1.e5/p_full(:,:,:,current))**kappa
+!   endif
+!endif 
+
 module_is_initialized = .true.
 
 return
@@ -303,6 +320,8 @@ type(time_type), intent(in) :: Time
 
 real    :: delta_t
 type(time_type) :: Time_next
+!integer :: count=0 
+logical :: first 
 
 if(.not.module_is_initialized) then
   call error_mesg('atmosphere','atmosphere module is not initialized',FATAL)
@@ -315,17 +334,29 @@ dt_psg = 0.0
 dt_tracers = 0.0
 
 if(current == previous) then
-  delta_t = dt_real
+   delta_t = dt_real
+   first=.true.
+!   count=-4
+!  grid_tracers(:,:,:,previous,n_tag_radi)=tg(:,:,:,previous)*(1.e5/p_full(:,:,:,previous))**kappa
+!  grid_tracers(:,:,:,current,n_tag_radi)=tg(:,:,:,previous)*(1.e5/p_full(:,:,:,previous))**kappa
+!  grid_tracers(:,:,:,1,n_tag_radi)=tg(:,:,:,0)*(1.0e5/p_full(:,:,:,1))**kappa
+!  print*, 'current==previous'
+!  print*, current
+!  print*, grid_tracers(0,:,:,1,n_tag_radi)
+!  print*, tg(0,:,:,1)
 else
-  delta_t = 2*dt_real
+   delta_t = 2*dt_real
+   first=.false.
 endif
 
 Time_next = Time + Time_step
 
 if(idealized_moist_model) then
    call idealized_moist_phys(Time, p_half, p_full, z_half, z_full, ug, vg, tg, grid_tracers, &
-                             previous, current, dt_ug, dt_vg, dt_tg, dt_tracers)
+        previous, current, dt_ug, dt_vg, dt_tg, dt_tracers)
+   
 else
+   
    call hs_forcing(1, ie-is+1, 1, je-js+1, delta_t, Time_next, rad_lon_2d, rad_lat_2d, &
                 p_half(:,:,:,current ),       p_full(:,:,:,current   ), &
                     ug(:,:,:,previous),           vg(:,:,:,previous  ), &
@@ -361,6 +392,22 @@ call spectral_diagnostics(Time_next, psg(:,:,future), ug(:,:,:,future), vg(:,:,:
 
 previous = current
 current  = future
+
+!if(count .lt. 2 ) then
+!   grid_tracers(:,:,:,1,n_tag_radi)=tg(:,:,:,1)*( 1.0e5 /p_full(:,:,:,1) )**kappa
+!   grid_tracers(:,:,:,2,n_tag_radi)=tg(:,:,:,1)*( 1.0e5 /p_full(:,:,:,1) )**kappa+0.000001
+!endif
+
+!print*, count 
+!print*, grid_tracers(1,32,1,1,n_tag_radi)
+!print*, tg(1,32,1,1)
+!print*, grid_tracers(1,32,1,2,n_tag_radi)
+!print*, tg(1,32,1,2)
+!print*, dt_tracers(1,32,1,n_tag_radi)
+!print*, first
+
+
+!count=count+1
 
 return
 end subroutine atmosphere
@@ -408,3 +455,4 @@ end subroutine atmosphere_end
 !=================================================================================================================================
 
 end module atmosphere_mod
+

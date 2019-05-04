@@ -1,0 +1,5 @@
+exp_name='long_conv_dt150_spec_T85'
+cold_restart=False
+i0=80
+i1=161
+tau_bm=57600

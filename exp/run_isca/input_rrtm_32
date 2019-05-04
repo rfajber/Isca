@@ -1,0 +1,4 @@
+NCORES=32
+exp_name='def_rrtm_T85_spec'
+cold_restart=True
+two_stream_option=False

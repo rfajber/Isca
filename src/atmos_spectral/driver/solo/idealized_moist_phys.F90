@@ -270,8 +270,8 @@ integer ::           &
 
 !rf-ht
 integer :: id_dt_tgp_cond,id_dt_tgp_conv,id_dt_tgp_diff,id_dt_tgp_radi,id_dt_tgn_cond,id_dt_tgn_conv,id_dt_tgn_radi,id_dt_tgn_diff, id_theta
-integer :: id_dt_tg, id_dt_tg_non_diffuse
-logical :: heat_tag=.true.
+integer :: id_dt_tg, id_dt_tg_non_diffuse, id_dt_tg_rad
+logical,public :: heat_tag=.true.
 integer :: n_tag_cond,n_tag_conv,n_tag_radi,n_tag_diff
 real, allocatable, dimension(:,:,:) :: O_over_T, sink_over_tracer
 real, allocatable, dimension(:,:,:) :: dt_tg_rad
@@ -760,6 +760,8 @@ endif
         axes(1:3), Time , 'potential temperature', 'K')
    id_dt_tg = register_diag_field(mod_name,'dt_tg',&
         axes(1:3), Time, 'temperature tendency', 'K/s')
+   id_dt_tg_rad = register_diag_field(mod_name,'dt_tg_radiation',&
+        axes(1:3), Time, 'radiative temperature tendency', 'K/s')
    id_dt_tg_non_diffuse = register_diag_field(mod_name,'dt_tg_non_diffuse',&
         axes(1:3), Time, 'non diffusive temperature tendency', 'K/s')
    id_dt_tgp_cond = register_diag_field(mod_name,'dt_tgp_cond',&
@@ -1101,11 +1103,15 @@ end if
         call error_mesg('idealized_moist_phys','do_rrtm_radiation is .true. but compiler flag -D RRTM_NO_COMPILE used. Stopping.', FATAL)
     endif
 #else
-if(do_rrtm_radiation) then
+    if(do_rrtm_radiation) then
+       !rf - this is a dirty trick
+       dt_tg_rad=dt_tg
    !need t at half grid
 	tg_interp=tg(:,:,:,previous)
    call interp_temp(z_full(:,:,:,current),z_half(:,:,:,current),tg_interp, Time)
    call run_rrtmg(is,js,Time,rad_lat(:,:),rad_lon(:,:),p_full(:,:,:,current),p_half(:,:,:,current),albedo,grid_tracers(:,:,:,previous,nsphum),tg_interp,t_surf(:,:),dt_tg(:,:,:),coszen,net_surf_sw_down(:,:),surf_lw_down(:,:))
+   !rf - finish the dirty trick
+   dt_tg_rad=dt_tg-dt_tg_rad
 endif
 #endif
 
@@ -1361,7 +1367,17 @@ if (heat_tag) then
    if(id_dt_tgn_diff>0) used = send_data(id_dt_tgn_diff,dt_tgn_diff,Time)
    if(id_dt_tgn_radi>0) used = send_data(id_dt_tgn_radi,dt_tgn_radi,Time)
 
+else
+
+   O_over_T = (1.e5/p_full(:,:,:,previous))**kappa
+   if(id_theta>0) used = send_data(id_theta,O_over_T*tg(:,:,:,previous),Time)
+   if(id_dt_tg>0) used = send_data(id_dt_tg,dt_tg,Time)
+   if(id_dt_tg_rad>0) used = send_data(id_dt_tg_rad,dt_tg_rad,Time)
+
 endif
+
+
+
 
 end subroutine idealized_moist_phys
 !=================================================================================================================================

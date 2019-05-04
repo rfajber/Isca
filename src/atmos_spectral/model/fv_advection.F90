@@ -300,6 +300,8 @@ real, dimension(js-1:je+1) :: dtdy
 real, dimension(js  :je) :: dyc
 integer :: j
 
+!rf - this is where the flux limiter gets set.
+
 dtdy(js-1:je+1) = dt/(dy(js-1:je+1)) 
 dyc (js  :je) = 1.0/(dy(js:je)*c(js:je))
 

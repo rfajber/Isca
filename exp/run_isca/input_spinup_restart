@@ -1,0 +1,5 @@
+exp_name='spinup_restart'
+cold_restart=False
+use_external_restart=True
+external_restart_file='/home/rfajber/restart/def.res0160.tar.gz'
+spinup_restart=True

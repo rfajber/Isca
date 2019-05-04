@@ -1,0 +1,5 @@
+exp_name='fixedod_dt150_spec_T85'
+cold_restart=False
+i0=80
+i1=161
+radiation_scheme='frierson'

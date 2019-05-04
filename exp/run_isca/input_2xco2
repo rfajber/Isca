@@ -1,0 +1,5 @@
+exp_name='2xco2_dt150_spec_T85'
+cold_restart=False
+i0=80
+i1=161
+carbon_conc=720.0

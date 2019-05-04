@@ -87,6 +87,8 @@ use       polvani_2004_mod, only: polvani_2004
 use       polvani_2007_mod, only: polvani_2007, polvani_2007_tracer_init, get_polvani_2007_tracers
 use   jablonowski_2006_mod, only: jablonowski_2006
 
+!use idealized_moist_phys_mod, only: heat_tag
+
 !===============================================================================================
 implicit none
 private
@@ -202,6 +204,7 @@ real    :: damping_coeff       = 1.15740741e-4, & ! (one tenth day)**-1
            raw_filter_coeff    = 1.0     !st Default value of 1.0 turns the RAW part of the filtering off. 0.5 is the desired value, but this appears unstable. Requires further testing.
 
 logical :: json_logging = .false.    ! print steps to std out in a machine readable format
+logical :: spinup_restart=.false.
 !===============================================================================================
 
 real, dimension(2) :: valid_range_t = (/100.,500./)
@@ -222,14 +225,15 @@ namelist /spectral_dynamics_nml/ use_virtual_temperature, damping_option, cutoff
                                  raw_filter_coeff,                                                   & !st
                                  graceful_shutdown, json_logging,                                    &
                                  graceful_shutdown,                                                  &
-								 make_symmetric                                                       !GC/RG add make_symmetric option
-
+				 make_symmetric,                                                     & !GC/RG add make_symmetric option
+                                 spinup_restart !rf
 contains
 
 !===============================================================================================
 
-subroutine spectral_dynamics_init(Time, Time_step_in, tracer_attributes, dry_model_out, nhum_out, ocean_mask)
+subroutine spectral_dynamics_init(Time, Time_step_in, tracer_attributes, dry_model_out, nhum_out,heat_tag,ocean_mask)
 
+logical,intent(in):: heat_tag
 type(time_type), intent(in) :: Time, Time_step_in
 type(tracer_type), intent(inout), dimension(:) :: tracer_attributes
 logical, intent(out) :: dry_model_out
@@ -409,7 +413,7 @@ do ntr=1,num_tracers
   endif
 enddo
 
-call read_restart_or_do_coldstart(tracer_attributes, ocean_mask)
+call read_restart_or_do_coldstart(heat_tag,tracer_attributes, ocean_mask,spinup_restart)
 
 call press_and_geopot_init(pk, bk, use_virtual_temperature, vert_difference_option)
 
@@ -493,19 +497,24 @@ return
 end subroutine spectral_dynamics_init
 
 !===============================================================================================
-subroutine read_restart_or_do_coldstart(tracer_attributes, ocean_mask)
+subroutine read_restart_or_do_coldstart(heat_tag,tracer_attributes, ocean_mask,spinup_restart)
 
 ! For backward compatibility, this routine has the capability
 ! to read native data restart files written by inchon code.
 
 type(tracer_type), intent(inout), dimension(:) :: tracer_attributes
 logical, optional, intent(in), dimension(:,:) :: ocean_mask
-
+logical, intent(in) :: heat_tag 
 integer :: m, n, k, nt, ntr
 integer, dimension(4) :: siz
 real, dimension(ms:me, ns:ne, num_levels) :: real_part, imag_part
 character(len=64) :: file, tr_name
 character(len=4) :: ch1,ch2,ch3,ch4,ch5,ch6
+
+!RF this is for initializing the heat tag
+real, dimension(is:ie, js:je, num_levels)    :: ln_p_full, p_full
+real, dimension(is:ie, js:je, num_levels+1)  :: ln_p_half, p_half
+logical, intent(in) :: spinup_restart
 
 file = 'INPUT/spectral_dynamics.res.nc'
 if(file_exist(trim(file))) then
@@ -570,7 +579,20 @@ if(file_exist(trim(file))) then
         enddo; enddo; enddo
       endif
     enddo ! loop over tracers
-  enddo ! loop over time levels
+ enddo ! loop over time levels
+ !rf - add restart
+
+if (spinup_restart) then
+   grid_tracers(:,:,:,:,5)=grid_tracers(:,:,:,:,2)+grid_tracers(:,:,:,:,3)+grid_tracers(:,:,:,:,4)+grid_tracers(:,:,:,:,5)
+   grid_tracers(:,:,:,:,4)=0.
+   grid_tracers(:,:,:,:,3)=0.
+   grid_tracers(:,:,:,:,2)=0.
+   spec_tracers(:,:,:,:,5)=spec_tracers(:,:,:,:,2)+spec_tracers(:,:,:,:,3)+spec_tracers(:,:,:,:,4)+spec_tracers(:,:,:,:,5)
+   spec_tracers(:,:,:,:,4)=0.
+   spec_tracers(:,:,:,:,3)=0.
+   spec_tracers(:,:,:,:,2)=0.
+end if 
+
   call read_data(trim(file), 'vorg', vorg, grid_domain)
   call read_data(trim(file), 'divg', divg, grid_domain)
   call read_data(trim(file), 'surf_geopotential', surf_geopotential, grid_domain)
@@ -612,8 +634,24 @@ else
                  tg(:,:,:,1), psg(:,:,1), vorg, divg, surf_geopotential)
   else
     call error_mesg('spectral_dynamics_init', trim(initial_state_option)//' is not a valid value of initial_state_option', FATAL)
-  end if
+ end if
 
+
+ !RF
+ !this is to intialize the intial tracer amount as being equal to the radiation tracer intially.
+ call pressure_variables (p_half, ln_p_half, p_full, ln_p_full, psg(:,:,1))
+
+ if (heat_tag) then 
+ 
+!  do ntr = 1,num_tracers
+!    if(trim(tracer_attributes(ntr)%name) == 'tag_O_radi') then
+       grid_tracers(:,:,:,1,5)=tg(:,:,:,1)*( 1.0e5 /p_full(:,:,:) )**kappa
+       print*, 'tracer_init'
+!    endif
+       ! enddo
+    endif 
+    
+    
   vors (:,:,:,2) = vors (:,:,:,1)
   divs (:,:,:,2) = divs (:,:,:,1)
   ts   (:,:,:,2) = ts   (:,:,:,1)
@@ -624,6 +662,7 @@ else
   psg  (:,:,  2) = psg  (:,:,  1)
   grid_tracers(:,:,:,2,:) = grid_tracers(:,:,:,1,:)
 
+  
   do ntr = 1,num_tracers
     call trans_grid_to_spherical(grid_tracers(:,:,:,1,ntr), spec_tracers(:,:,:,1,ntr))
     spec_tracers(:,:,:,2,ntr) = spec_tracers(:,:,:,1,ntr)
@@ -1027,7 +1066,6 @@ ug_final  =  ug(:,:,:,current)
 vg_final  =  vg(:,:,:,current)
 tg_final  =  tg(:,:,:,current)
 grid_tracers_final(:,:,:,time_level_out,:) = grid_tracers(:,:,:,current,:)
-
 
 call complete_robert_filter(tracer_attributes, part_filt_ln_ps, part_filt_vors, part_filt_divs, part_filt_ts, part_filt_trs, part_filt_tr)
 
