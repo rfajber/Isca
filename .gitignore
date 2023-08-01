@@ -30,6 +30,7 @@ Makefile
 *.DS_Store
 ._*
 *.mod
+\#*\#
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -38,7 +39,8 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-env/
+# RF - leave this in so that we can distribute the environment files
+#env/
 build/
 develop-eggs/
 dist/
@@ -111,3 +113,5 @@ ENV/
 
 # mkdocs documentation
 /site
+
+!/src/extra/env/narval-ifort

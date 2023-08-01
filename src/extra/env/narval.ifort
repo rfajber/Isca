@@ -1,0 +1,12 @@
+echo loadmodules for Isca
+
+export F90=mpifort
+export CC=mpicc
+
+module --force purge all 
+
+module load StdEnv/2020
+module load openmpi/4.0.3
+module load netcdf/4.9.0
+module load netcdf-fortran/4.6.0
+
