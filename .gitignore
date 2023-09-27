@@ -114,4 +114,10 @@ ENV/
 # mkdocs documentation
 /site
 
-!/src/extra/env/narval-ifort
+src/atmos_param/socrates/src/socrates_1710.tar.xz
+.gitignore
+src/atmos_param/socrates/src/socrates_2306.tar.xz
+src/atmos_param/socrates/src/socrates_1806.tar.xz
+*.out 
+*.err
+exp/test_cases/*

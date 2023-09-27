@@ -71,8 +71,11 @@ public :: atmosphere_init, atmosphere, atmosphere_end, atmosphere_domain
 
 !=================================================================================================================================
 logical :: idealized_moist_model = .false.
+! RFTT
+logical :: water_tag = .false.
+logical :: reset_water_tags = .false.
 
-namelist/atmosphere_nml/ idealized_moist_model
+namelist/atmosphere_nml/ idealized_moist_model, water_tag, reset_water_tags
 
 !=================================================================================================================================
 
@@ -82,6 +85,7 @@ logical :: dry_model
 
 real, allocatable, dimension(:,:,:,:) :: p_half, p_full
 real, allocatable, dimension(:,:,:,:) :: z_half, z_full
+real, allocatable, dimension(:,:,:) :: tracer_sum
 
 type(tracer_type), allocatable, dimension(:) :: tracer_attributes
 real, allocatable, dimension(:,:,:,:,:) :: grid_tracers
@@ -247,10 +251,15 @@ do j = js,je+1
 enddo
 
 if(idealized_moist_model) then
-   call idealized_moist_phys_init(Time, Time_step, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, tg(:,:,num_levels,current))
+   call idealized_moist_phys_init(Time, Time_step, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, tg(:,:,num_levels,current),&
+   deg_lat,water_tag)
 else
    call hs_forcing_init(get_axis_id(), Time, rad_lonb_2d, rad_latb_2d, rad_lat_2d)
 endif
+
+! if (reset_water_tags) then 
+!   grid_tracers(:,:,:,1,2:num_tracers)=0.0
+! end if 
 
 module_is_initialized = .true.
 
@@ -264,6 +273,8 @@ type(time_type), intent(in) :: Time
 
 real    :: delta_t
 type(time_type) :: Time_next
+
+integer :: ntr
 
 if(.not.module_is_initialized) then
   call error_mesg('atmosphere','atmosphere module is not initialized',FATAL)
@@ -307,6 +318,20 @@ call spectral_dynamics(Time, psg(:,:,future), ug(:,:,:,future), vg(:,:,:,future)
                        tg(:,:,:,future), tracer_attributes, grid_tracers(:,:,:,:,:), future, &
                        dt_psg, dt_ug, dt_vg, dt_tg, dt_tracers, wg_full, &
                        p_full(:,:,:,current), p_half(:,:,:,current), z_full(:,:,:,current))
+
+! RFTT - do some numerical checks on the water tags
+if (water_tag) then 
+!  sum_tracers = sum_tracers * 0 
+  do ntr = 2,num_tracers
+    where ( grid_tracers(:,:,:,future,ntr) .lt. 0.0) 
+      grid_tracers(:,:,:,future,ntr) = 0.0
+    end where
+  end do  
+  
+  grid_tracers(:,:,:,future,2:num_tracers) = grid_tracers(:,:,:,future,2:num_tracers) * & 
+  spread( grid_tracers(:,:,:,future,1) / ( sum(grid_tracers(:,:,:,future,2:num_tracers),4) + 1e-6 ), 4, num_tracers-1)
+
+end if 
 
 if(dry_model) then
   call compute_pressures_and_heights(tg(:,:,:,future), psg(:,:,future), surf_geopotential, &

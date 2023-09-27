@@ -577,14 +577,15 @@ else if(file_exist('INPUT/spectral_dynamics.res')) then
   call error_mesg('spectral_dynamics_init', &
               'Binary restart file, INPUT/spectral_dynamics.res, is not supported by this version of spectral_dynamics.f90',FATAL)
 else
+  !RFTT  need to do an initialization here
   do ntr = 1,num_tracers
-    if(trim(tracer_attributes(ntr)%name) == 'sphum') then
+!    if(trim(tracer_attributes(ntr)%name) == 'sphum') then
       grid_tracers(:,:,:,:,ntr) = initial_sphum
-    else if(trim(tracer_attributes(ntr)%name) == 'mix_rat') then
-      grid_tracers(:,:,:,:,ntr) = 0.
-    else
-      grid_tracers(:,:,:,:,ntr) = 0.
-    endif
+    ! else if(trim(tracer_attributes(ntr)%name) == 'mix_rat') then
+    !   grid_tracers(:,:,:,:,ntr) = 0.
+    ! else
+    !   grid_tracers(:,:,:,:,ntr) = 0.
+    ! endif
   enddo
 
   previous = 1

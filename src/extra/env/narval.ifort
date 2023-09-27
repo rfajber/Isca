@@ -2,6 +2,7 @@ echo loadmodules for Isca
 
 export F90=mpifort
 export CC=mpicc
+export GFDL_MKMF_TEMPLATE=narval.ifort
 
 module --force purge all 
 

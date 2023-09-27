@@ -50,6 +50,7 @@ atmos_spectral/model/spectral_damping.F90
 atmos_spectral/model/spectral_dynamics.F90
 atmos_spectral/model/tracer_type.F90
 atmos_spectral/model/water_borrowing.F90
+atmos_spectral/model/tracer_tagging.F90
 atmos_spectral/tools/gauss_and_legendre.F90
 atmos_spectral/tools/grid_fourier.F90
 atmos_spectral/tools/spec_mpp.F90

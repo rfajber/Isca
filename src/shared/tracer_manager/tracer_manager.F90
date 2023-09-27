@@ -272,7 +272,7 @@ do n=1,nfields
          if(num_tracer_fields > MAX_TRACER_FIELDS) call mpp_error(FATAL,'tracer_manager_init: MAX_TRACER_FIELDS exceeded')
          tracers(num_tracer_fields)%model          = model
          tracers(num_tracer_fields)%tracer_name    = name
-         tracers(num_tracer_fields)%tracer_units   = 'none'
+        tracers(num_tracer_fields)%tracer_units   = 'none'
          tracers(num_tracer_fields)%tracer_longname = tracers(num_tracer_fields)%tracer_name
          tracers(num_tracer_fields)%instances_set   = .FALSE.
          num_tracer_methods     = 0

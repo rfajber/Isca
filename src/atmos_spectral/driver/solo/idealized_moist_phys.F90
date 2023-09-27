@@ -51,11 +51,14 @@ use         mpp_domains_mod, only: mpp_get_global_domain ! needed for reading in
 
 use          transforms_mod, only: grid_domain
 
-use tracer_manager_mod, only: get_number_tracers, query_method
+use     tracer_manager_mod, only: get_number_tracers, query_method, get_tracer_index, get_tracer_names, NO_TRACER
 
 use  field_manager_mod, only: MODEL_ATMOS
 
 use rayleigh_bottom_drag_mod, only: rayleigh_bottom_drag_init, compute_rayleigh_bottom_drag
+
+!RFTT
+use tracer_tagging, only: tagged_tracers_init, tagged_tracers_end, water_tagged_tendencies
 
 #ifdef RRTM_NO_COMPILE
     ! RRTM_NO_COMPILE not included
@@ -157,12 +160,16 @@ namelist / idealized_moist_phys_nml / turb, lwet_convection, do_bm, do_ras, roug
                                       gp_surface, convection_scheme,          &
                                       bucket, init_bucket_depth, init_bucket_depth_land, & !RG Add bucket 
                                       max_bucket_depth_land, robert_bucket, raw_bucket, &
-                                      do_socrates_radiation
+                                      do_socrates_radiation 
 
 
 integer, parameter :: num_time_levels = 2 !RG Add bucket - number of time levels added to allow timestepping in this module
 real, allocatable, dimension(:,:,:)   :: bucket_depth      ! RG Add bucket
 real, allocatable, dimension(:,:    ) :: dt_bucket, filt   ! RG Add bucket
+
+!RFTT add tagged tracer variables
+logical :: water_tag
+
 
 real, allocatable, dimension(:,:)   ::                                        &
      z_surf,               &   ! surface height
@@ -303,18 +310,21 @@ integer :: is, ie, js, je, num_levels, nsphum, dt_integer
 real :: dt_real
 type(time_type) :: Time_step
 
+integer :: num_tracers, ntr
+
 !=================================================================================================================================
 contains
 !=================================================================================================================================
 
-subroutine idealized_moist_phys_init(Time, Time_step_in, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, t_surf_init)
+subroutine idealized_moist_phys_init(Time, Time_step_in, nhum, rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, t_surf_init,deg_lat_in,water_tag_in)
 type(time_type), intent(in) :: Time, Time_step_in
 integer, intent(in) :: nhum
 real, intent(in), dimension(:,:) :: rad_lon_2d, rad_lat_2d, rad_lonb_2d, rad_latb_2d, t_surf_init
+real, intent(in), dimension(:) :: deg_lat_in
+logical, intent(in) :: water_tag_in
 
 integer :: io, nml_unit, stdlog_unit, seconds, days, id, jd, kd
 real, dimension (size(rad_lonb_2d,1)-1, size(rad_latb_2d,2)-1) :: sgsmtn ! needed for damping_driver
-
 !s added for land reading
 integer, dimension(4) :: siz
 integer :: global_num_lon, global_num_lat, ierr
@@ -322,7 +332,8 @@ character(len=12) :: ctmp1='     by     ', ctmp2='     by     '
 !s end added for land reading
 
 ! Added for RAS
-integer :: num_tracers=0,num_ras_tracers=0,n=0
+!integer :: num_tracers=0,num_ras_tracers=0,n=0
+integer :: num_ras_tracers=0,n=0
 logical :: do_tracers_in_ras = .false.
 
 logical, dimension(:), allocatable :: tracers_in_ras
@@ -331,7 +342,6 @@ character(len=80)  :: scheme
 ! End Added for RAS
 
 if(module_is_initialized) return
-
 call write_version_number(version, tagname)
 
 #ifdef INTERNAL_FILE_NML
@@ -437,6 +447,12 @@ dt_real      = float(dt_integer)
 
 call get_grid_domain(is, ie, js, je)
 call get_num_levels(num_levels)
+!RFTT - move this here so its easier to set dimension size
+call get_number_tracers (MODEL_ATMOS, num_tracers= num_tracers)
+
+! do j=js,je
+!   print*, j,rad_lat_2d(0,j)
+! end do
 
 allocate(rad_lat     (is:ie, js:je)); rad_lat = rad_lat_2d
 allocate(rad_lon     (is:ie, js:je)); rad_lon = rad_lon_2d
@@ -692,7 +708,7 @@ case(RAS_CONV)
        !    which tracers are to be convectively transported.
        !---------------------------------------------------------------------
 
-       call get_number_tracers (MODEL_ATMOS, num_tracers= num_tracers)
+!       call get_number_tracers (MODEL_ATMOS, num_tracers= num_tracers)
 
        allocate (tracers_in_ras(num_tracers))
        ! Instead of finding out which of the tracers need to be advected, manually set this to .false.
@@ -783,6 +799,20 @@ endif
 
    id_rh = register_diag_field ( mod_name, 'rh',                           &
         axes(1:3), Time, 'relative humidity', 'percent')
+
+! RFTT set water tag variable
+water_tag = water_tag_in
+!print*, 'water_tag:', water_tag
+! RFTT - intialize the water tag model here 
+if (water_tag) then
+!  print*, 'started initialization'
+  call tagged_tracers_init(is,ie,& !lon bounds
+                      js,je,& !lat bounds
+                      num_levels,& ! vertical bounds)
+                      num_tracers,&
+                      Time&
+                       )
+  endif 
 
 end subroutine idealized_moist_phys_init
 !=================================================================================================================================
@@ -930,11 +960,9 @@ case default
 
 end select
 
-
 ! Add the T and q tendencies due to convection to the timestep
 dt_tg = dt_tg + conv_dt_tg
 dt_tracers(:,:,:,nsphum) = dt_tracers(:,:,:,nsphum) + conv_dt_qg
-
 
 ! Perform large scale convection
 if (r_conv_scheme .ne. DRY_CONV) then
@@ -961,7 +989,7 @@ if (r_conv_scheme .ne. DRY_CONV) then
   if(id_cond_dt_tg > 0) used = send_data(id_cond_dt_tg, cond_dt_tg, Time)
   if(id_cond_rain  > 0) used = send_data(id_cond_rain, rain, Time)
   if(id_precip     > 0) used = send_data(id_precip, precip, Time)
-
+  
 endif
 
 ! Call the simple cloud scheme in line with SPOOKIE-2 requirements
@@ -1080,7 +1108,40 @@ if(.not.gp_surface) then
   if(id_q_2m > 0) used = send_data(id_q_2m, q_2m, Time)
   if(id_rh_2m > 0) used = send_data(id_rh_2m, rh_2m*1e2, Time)
 
-endif
+  !RFTT update the tag tendencies
+!   if (water_tag) then
+! !    print*, z_half(0,0,num_levels,previous) - z_surf(0,0)
+!     call water_tagged_tendency_update_surf(&
+!     flux_q,& ! evaporative flux, in kg/s
+!     grid_tracers(:,:,:,previous,:),&
+!     ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV &
+! !    ( p_full(:,:,num_levels,previous) / ( RDGAS * tg(:,:,num_levels,previous) ) ) * (z_half(:,:,num_levels,previous) - z_surf)& ! mass of the bottom layer
+!     )
+! !    print *, p_half(0,32,num_levels+1,previous),  p_half(0,32,num_levels,previous) 
+! !    print *, ( p_full(0,0,num_levels,previous) / RDGAS * tg(0,0,num_levels,previous) ) * (z_half(0,0,num_levels,previous) - z_surf)
+!     do ntr=2,num_tracers
+!       where (flux_q .gt. 0.0) 
+!       dt_tracers(:,:,num_levels,ntr) = dt_tracers(:,:,num_levels,ntr) + &
+!       flux_q / ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV ) 
+!       end where 
+!     end do
+
+!     end if
+
+end if
+
+! RFTT - tagged tracer implementation block
+if (water_tag) then
+  call water_tagged_tendencies(&
+    conv_dt_qg + cond_dt_qg, & ! physics tendency 
+    grid_tracers(:,:,:,previous,:),&! grid tags
+    Time,&
+    flux_q,&
+    ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV, &
+    dt_tracers& ! grid tracer tendency
+    )
+end if 
+
 
 ! Now complete the radiation calculation by computing the upward and net fluxes.
 
@@ -1303,7 +1364,7 @@ if(bucket) then
 
    if(previous == current) then
       bucket_depth(:,:,future ) = bucket_depth(:,:,previous) + dt_bucket
-      bucket_depth(:,:,current) = bucket_depth(:,:,current ) + robert_bucket &
+      bucket_depth(:,:,current) = bucket_depth(:,:,current ) + robert_bucket &  
         *(bucket_depth(:,:,previous) - 2.0*bucket_depth(:,:,current) + bucket_depth(:,:,future)) * raw_bucket
    else
       bucket_depth(:,:,current) = bucket_depth(:,:,current ) + robert_bucket &
@@ -1330,9 +1391,6 @@ if(bucket) then
 endif
 ! end Add bucket section
 
-
-
-
 end subroutine idealized_moist_phys
 !=================================================================================================================================
 subroutine idealized_moist_phys_end
@@ -1355,6 +1413,10 @@ if(do_damping) call damping_driver_end
 #else
 if(do_socrates_radiation) call run_socrates_end
 #endif
+
+if(water_tag)then
+  call tagged_tracers_end
+endif 
 
 end subroutine idealized_moist_phys_end
 !=================================================================================================================================
