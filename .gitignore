@@ -121,3 +121,4 @@ src/atmos_param/socrates/src/socrates_1806.tar.xz
 *.out 
 *.err
 exp/test_cases/*
+exp/test_cases/*/*

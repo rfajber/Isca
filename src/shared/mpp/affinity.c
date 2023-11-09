@@ -30,10 +30,26 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 
-static pid_t gettid(void)
-{
-  return syscall(__NR_gettid);
-}
+
+#ifndef HAVE_GETTID
+ static pid_t gettid(void)
+ {
+ #if defined(__APPLE__)
+   uint64_t tid64;
+   pthread_threadid_np(NULL, &tid64);
+   pid_t tid = (pid_t)tid64;
+ #else
+   pid_t tid = syscall(__NR_gettid);
+ #endif
+   return tid;
+ }
+ #endif
+
+// pid_t gettid(void)
+// {  
+//   return syscall(__NR_gettid);  
+// }
+
 
 /*
  * Returns this thread's CPU affinity, if bound to a single core,

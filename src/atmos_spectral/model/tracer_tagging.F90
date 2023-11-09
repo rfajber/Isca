@@ -43,7 +43,8 @@ module tracer_tagging
     real, allocatable, dimension(:,:,:,:) :: sink, src
 !    real, dimension(5) :: sn = (/-1.0, -0.5, 0.0, 0.5, 1.0/)
     real, dimension(9) :: ln = (/-90., -48.5904, -30., -14.4775, 0.0, 14.4775, 30., 48.5904, 90./)
-    !real, dimension(5) :: ln = (/-90., -30., 0.0, 30., 90./)
+!    real, dimension(5) :: ln = (/-90., -30., 0.0, 30., 90./)
+    !real,dimension(2) :: ln =(-90,90)
     real, dimension(:), allocatable :: deg_lat
     integer :: is,ie,js,je,nsphum,num_levels,num_tracers,j,ntr
 
@@ -77,11 +78,11 @@ module tracer_tagging
         num_tracers = num_tracers_in
 
         ! allocate variables 
-        allocate(dt_qgp_temp (is:ie,js:je,num_levels) )
-        allocate(dt_qgn_temp (is:ie,js:je,num_levels) )
-        allocate(tracer_mask (is:ie,js:je,num_levels,num_tracers))
-        allocate(sink (is:ie,js:je,num_levels,num_tracers))
-        allocate(src (is:ie,js:je,num_levels,num_tracers))
+        ! allocate(dt_qgp_temp (is:ie,js:je,num_levels) )
+        ! allocate(dt_qgn_temp (is:ie,js:je,num_levels) )
+        allocate(tracer_mask (is:ie,js:je,num_levels,num_tracers)); tracer_mask=0.0
+        allocate(sink (is:ie,js:je,num_levels,num_tracers)); sink=0.0
+        allocate(src (is:ie,js:je,num_levels,num_tracers)); src=0.0
 
         allocate(deg_lat(js:je))
         call get_deg_lat(deg_lat)
@@ -89,17 +90,18 @@ module tracer_tagging
         allocate(id_tr_sink(num_tracers))
         allocate(id_tr_src(num_tracers))
 
+        
         ! initialize variables
-        dt_qgp=0.
-        dt_qgn=0.
-        dt_qgp_conv=0.
-        dt_qgn_conv=0.
-        dt_qgp_cond=0.
-        dt_qgn_cond=0.
-        dt_qgp_diff=0.
-        dt_qgn_diff=0.
-        dt_qgp_temp=0.
-        dt_qgn_temp=0.
+        ! dt_qgp=0.
+        ! dt_qgn=0.
+        ! dt_qgp_conv=0.
+        ! dt_qgn_conv=0.
+        ! dt_qgp_cond=0.
+        ! dt_qgn_cond=0.
+        ! dt_qgp_diff=0.
+        ! dt_qgn_diff=0.
+        ! dt_qgp_temp=0.
+        ! dt_qgn_temp=0.
 
         ! initialize outputs
         axes = get_axis_id()
@@ -155,6 +157,8 @@ module tracer_tagging
         
         do ntr=2,num_tracers
 
+!            print*, ntr
+
             sink(:,:,:,ntr) = 0.0
             src(:,:,:,ntr) = 0.0
     
@@ -166,13 +170,19 @@ module tracer_tagging
                 grid_tracers(:,:,:,ntr) / (grid_tracers(:,:,:,nsphum) + a_small_number)
             endwhere
 
+!            print*, 'bottom flux', ntr
+
             where(flux_q .gt. 0)
                 src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + flux_q/bottom_layer_mass * &
+!                src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + flux_q * &
                 tracer_mask(:,:,num_levels,ntr)
             elsewhere
-                sink(:,:,num_levels,ntr) = sink(:,:,num_levels,ntr) + flux_q/bottom_layer_mass * &
+                 sink(:,:,num_levels,ntr) = sink(:,:,num_levels,ntr) + flux_q/bottom_layer_mass * &
+!                sink(:,:,num_levels,ntr) = sink(:,:,num_levels,ntr) + flux_q * &
                 grid_tracers(:,:,num_levels,ntr) / (grid_tracers(:,:,num_levels,nsphum) + a_small_number)
             endwhere
+
+!            print*, 'update tend', ntr
             
             dt_tracers(:,:,:,ntr) = src(:,:,:,ntr) + sink(:,:,:,ntr)
 
@@ -316,8 +326,8 @@ module tracer_tagging
     !=================================================================================================================================
     subroutine tagged_tracers_end
 
-        deallocate(dt_qgp_temp )
-        deallocate(dt_qgn_temp )
+        ! deallocate(dt_qgp_temp )
+        ! deallocate(dt_qgn_temp )
         deallocate(tracer_mask )
         deallocate(sink)
         deallocate(src)

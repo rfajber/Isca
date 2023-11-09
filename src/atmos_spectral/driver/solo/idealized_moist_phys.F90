@@ -49,7 +49,7 @@ use    press_and_geopot_mod, only: pressure_variables
 
 use         mpp_domains_mod, only: mpp_get_global_domain ! needed for reading in land
 
-use          transforms_mod, only: grid_domain
+use          transforms_mod, only: grid_domain, get_deg_lat
 
 use     tracer_manager_mod, only: get_number_tracers, query_method, get_tracer_index, get_tracer_names, NO_TRACER
 
@@ -169,7 +169,7 @@ real, allocatable, dimension(:,:    ) :: dt_bucket, filt   ! RG Add bucket
 
 !RFTT add tagged tracer variables
 logical :: water_tag
-
+real :: a_small_number = 1e-6
 
 real, allocatable, dimension(:,:)   ::                                        &
      z_surf,               &   ! surface height
@@ -230,6 +230,7 @@ real, allocatable, dimension(:,:,:) ::                                        &
      non_diff_dt_vg,       &   ! merid. wind tendency except from vertical diffusion
      non_diff_dt_tg,       &   ! temperature tendency except from vertical diffusion
      non_diff_dt_qg,       &   ! moisture tendency except from vertical diffusion
+     non_diff_dt_qg_test,       &   ! moisture tendency except from vertical diffusion
      conv_dt_tg,           &   ! temperature tendency from convection
      conv_dt_qg,           &   ! moisture tendency from convection
      cond_dt_tg,           &   ! temperature tendency from condensation
@@ -269,6 +270,7 @@ integer ::           &
      id_diff_dt_vg,  &   ! merid. wind tendency from vertical diffusion
      id_diff_dt_tg,  &   ! temperature tendency from vertical diffusion
      id_diff_dt_qg,  &   ! moisture tendency from vertical diffusion
+     id_diff_dt_qg_test,  &   ! moisture tendency from vertical diffusion
      id_conv_rain,   &   ! rain from convection
      id_cond_rain,   &   ! rain from condensation
      id_precip,      &   ! rain and snow from condensation and convection
@@ -312,6 +314,19 @@ type(time_type) :: Time_step
 
 integer :: num_tracers, ntr
 
+!RFTT
+real, allocatable, dimension(:,:,:,:) :: tracer_mask
+real, allocatable, dimension(:,:,:,:) :: sink, src
+!    real, dimension(5) :: sn = (/-1.0, -0.5, 0.0, 0.5, 1.0/)
+!real, dimension(9) :: ln = (/-90., -48.5904, -30., -14.4775, 0.0, 14.4775, 30., 48.5904, 90./)
+real, dimension(5) :: ln = (/-90., -30., 0.0, 30., 90./)
+!real,dimension(2) :: ln =(-90,90)
+real, dimension(:), allocatable :: deg_lat
+!integer :: is,ie,js,je,nsphum,num_levels,num_tracers,j,ntr
+integer :: i,j 
+integer, dimension(:), allocatable :: id_tr_sink, id_tr_src
+
+
 !=================================================================================================================================
 contains
 !=================================================================================================================================
@@ -340,6 +355,9 @@ logical, dimension(:), allocatable :: tracers_in_ras
 
 character(len=80)  :: scheme
 ! End Added for RAS
+
+!RFTT
+character(len=128) :: tname, longname, units
 
 if(module_is_initialized) return
 call write_version_number(version, tagname)
@@ -515,6 +533,7 @@ allocate(non_diff_dt_ug  (is:ie, js:je, num_levels))
 allocate(non_diff_dt_vg  (is:ie, js:je, num_levels))
 allocate(non_diff_dt_tg  (is:ie, js:je, num_levels))
 allocate(non_diff_dt_qg  (is:ie, js:je, num_levels))
+allocate(non_diff_dt_qg_test  (is:ie, js:je, num_levels))
 
 allocate(net_surf_sw_down        (is:ie, js:je))
 allocate(surf_lw_down            (is:ie, js:je))
@@ -795,6 +814,8 @@ if(turb) then
         axes(1:3), Time, 'temperature diffusion tendency','K/s')
    id_diff_dt_qg = register_diag_field(mod_name, 'dt_qg_diffusion',        &
         axes(1:3), Time, 'moisture diffusion tendency','kg/kg/s')
+   id_diff_dt_qg_test = register_diag_field(mod_name, 'dt_qg_diffusion_test',        &
+        axes(1:3), Time, 'moisture diffusion tendency','kg/kg/s')
 endif
 
    id_rh = register_diag_field ( mod_name, 'rh',                           &
@@ -804,15 +825,66 @@ endif
 water_tag = water_tag_in
 !print*, 'water_tag:', water_tag
 ! RFTT - intialize the water tag model here 
+! if (water_tag) then
+! !  print*, 'started initialization'
+!   call tagged_tracers_init(is,ie,& !lon bounds
+!                       js,je,& !lat bounds
+!                       num_levels,& ! vertical bounds)
+!                       num_tracers,&
+!                       Time&
+!                        )
+!   endif 
+
 if (water_tag) then
-!  print*, 'started initialization'
-  call tagged_tracers_init(is,ie,& !lon bounds
-                      js,je,& !lat bounds
-                      num_levels,& ! vertical bounds)
-                      num_tracers,&
-                      Time&
-                       )
-  endif 
+
+  allocate(tracer_mask (is:ie,js:je,num_levels,num_tracers)); tracer_mask=0.0
+  allocate(sink (is:ie,js:je,num_levels,num_tracers)); sink=0.0
+  allocate(src (is:ie,js:je,num_levels,num_tracers)); src=0.0
+
+  allocate(deg_lat(js:je))
+  call get_deg_lat(deg_lat)
+
+  allocate(id_tr_sink(num_tracers))
+  allocate(id_tr_src(num_tracers))
+
+
+  ! initialize variables
+  ! dt_qgp=0.
+  ! dt_qgn=0.
+  ! dt_qgp_conv=0.
+  ! dt_qgn_conv=0.
+  ! dt_qgp_cond=0.
+  ! dt_qgn_cond=0.
+  ! dt_qgp_diff=0.
+  ! dt_qgn_diff=0.
+  ! dt_qgp_temp=0.
+  ! dt_qgn_temp=0.
+
+  ! initialize outputs
+  ! axes = get_axis_id()
+  ! id_dt_qgp = register_diag_field(mod_name,'dt_qgp', &
+  ! axes(1:3), Time , 'dt_qgp', 'kg/kg/s')
+  ! id_dt_qgn = register_diag_field(mod_name,'dt_qgn', &
+  ! axes(1:3), Time , 'dt_qgn', 'kg/kg/s')
+
+  tracer_mask=0.0
+  ! don't bother updating water vapor
+  !tracer_mask(:,:,:,1) = 1.0
+  do ntr=2,num_tracers
+    do j = js, je
+      if ( (deg_lat(j) .gt. ln(ntr-1)) .and. (deg_lat(j) .le. ln(ntr)) ) then
+          tracer_mask(:,j,:,ntr) = 1.0
+      end if
+    end do     
+  end do
+
+  ! axes = get_axis_id()
+  do ntr=1,num_tracers
+  call get_tracer_names(MODEL_ATMOS, ntr, tname, longname, units)
+  id_tr_sink(ntr) = register_diag_field(mod_name, trim(tname)//trim('_sink'), axes(1:3), Time, trim(longname)//trim(' sink'), trim(units)//trim('/s')) 
+  id_tr_src(ntr) =  register_diag_field(mod_name, trim(tname)//trim('_src'),  axes(1:3), Time, trim(longname)//trim(' src'),  trim(units)//trim('/s')) 
+  enddo        
+end if 
 
 end subroutine idealized_moist_phys_init
 !=================================================================================================================================
@@ -1131,16 +1203,18 @@ if(.not.gp_surface) then
 end if
 
 ! RFTT - tagged tracer implementation block
-if (water_tag) then
-  call water_tagged_tendencies(&
-    conv_dt_qg + cond_dt_qg, & ! physics tendency 
-    grid_tracers(:,:,:,previous,:),&! grid tags
-    Time,&
-    flux_q,&
-    ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV, &
-    dt_tracers& ! grid tracer tendency
-    )
-end if 
+! if (water_tag) then
+!   call water_tagged_tendencies(&
+!     conv_dt_qg + cond_dt_qg, & ! physics tendency 
+!     grid_tracers(:,:,:,previous,:),&! grid tags
+!     Time,&
+!     flux_q,&
+!     ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV, &
+!     dt_tracers& ! grid tracer tendency
+!     )
+
+! end if 
+
 
 
 ! Now complete the radiation calculation by computing the upward and net fluxes.
@@ -1331,6 +1405,7 @@ if(turb) then
    if(id_diff_dt_vg > 0) used = send_data(id_diff_dt_vg, dt_vg - non_diff_dt_vg, Time)
    if(id_diff_dt_tg > 0) used = send_data(id_diff_dt_tg, dt_tg - non_diff_dt_tg, Time)
    if(id_diff_dt_qg > 0) used = send_data(id_diff_dt_qg, dt_tracers(:,:,:,nsphum) - non_diff_dt_qg, Time)
+   if(id_diff_dt_qg_test > 0) used = send_data(id_diff_dt_qg_test, dt_tracers(:,:,:,5) - non_diff_dt_qg_test, Time)
 
 endif ! if(turb) then
 
@@ -1391,6 +1466,54 @@ if(bucket) then
 endif
 ! end Add bucket section
 
+!RFTT
+  if (water_tag) then 
+
+    do ntr=2,num_tracers
+
+      where (flux_q .lt. 0)
+
+        sink(:,:,num_levels,ntr) =  sink(:,:,num_levels,ntr) + (flux_q) / &
+        ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV ) *  &
+        grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
+
+      elsewhere
+
+        src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + tracer_mask(:,:,num_levels,ntr) * &
+        flux_q / ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV )
+
+      end where
+
+      where ( (conv_dt_qg) .lt. 0)
+
+        sink(:,:,:,ntr) =  sink(:,:,:,ntr) + (conv_dt_qg) *  &
+        grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
+
+      elsewhere
+
+         src(:,:,:,ntr) = src(:,:,:,ntr) + tracer_mask(:,:,:,ntr)*(conv_dt_qg)
+    
+      end where
+
+      where ( (cond_dt_qg) .lt. 0)
+
+        sink(:,:,:,ntr) =  sink(:,:,:,ntr) + (cond_dt_qg) *  &
+        grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
+
+      elsewhere
+
+         src(:,:,:,ntr) = src(:,:,:,ntr) + tracer_mask(:,:,:,ntr)*(cond_dt_qg)
+    
+      end where
+    
+      if(id_tr_sink(ntr) > 0) used = send_data(id_tr_sink(ntr), sink(:,:,:,ntr), Time)
+      if(id_tr_src(ntr) > 0) used = send_data(id_tr_src(ntr), src(:,:,:,ntr), Time)
+
+      dt_tracers(:,:,:,ntr) = src(:,:,:,ntr) + sink(:,:,:,ntr)
+
+    end do 
+  end if  
+
 end subroutine idealized_moist_phys
 !=================================================================================================================================
 subroutine idealized_moist_phys_end
@@ -1414,9 +1537,17 @@ if(do_damping) call damping_driver_end
 if(do_socrates_radiation) call run_socrates_end
 #endif
 
-if(water_tag)then
-  call tagged_tracers_end
-endif 
+! if(water_tag)then
+!   call tagged_tracers_end
+! endif 
+
+deallocate(tracer_mask)
+deallocate(sink)
+deallocate(src)
+deallocate(deg_lat)
+deallocate(id_tr_sink)
+deallocate(id_tr_src)
+
 
 end subroutine idealized_moist_phys_end
 !=================================================================================================================================

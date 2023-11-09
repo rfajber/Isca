@@ -5,8 +5,8 @@ import numpy as np
 from isca import GreyCodeBase, DiagTable, Experiment, Namelist, GFDL_BASE
 
 #note default resolution is T42
-NCORES = 32
-output_len = 3
+NCORES = 16
+output_len = 30
 base_dir = os.path.dirname(os.path.realpath(__file__))
 # a CodeBase can be a directory on the computer,
 # useful for iterative development
@@ -42,13 +42,13 @@ cb.compile()  # compile the source code to working directory $GFDL_WORK/codebase
 # create an Experiment object to handle the configuration of model parameters
 # and output diagnostics
 externalFieldTablePath='/home/rfajber/Isca/exp/RF/input/field_table'
-exp = Experiment('B0', codebase=cb,
+exp = Experiment('C2', codebase=cb,
                  externalFieldTablePath=externalFieldTablePath)
 
 #Tell model how to write diagnostics
 diag = DiagTable()
-diag.add_file('atmos_4xday', 6)
-#diag.add_file('atmos_monthly', 30, 'days', time_units='days')
+#diag.add_file('atmos_4xday', 6)
+diag.add_file('atmos_monthly', 30, 'days', time_units='days')
 
 #Tell model which diagnostics to write
 diag.add_field('dynamics', 'ps', time_avg=True)
@@ -65,7 +65,6 @@ diag.add_field('mixed_layer', 't_surf', time_avg=True)
 diag.add_field('mixed_layer', 'flux_lhe', time_avg=True)
 diag.add_field('dynamics', 'ucomp', time_avg=True)
 diag.add_field('dynamics', 'vcomp', time_avg=True)
-diag.add_field('dynamics', 'omega', time_avg=True)
 diag.add_field('dynamics', 'temp', time_avg=True)
 #diag.add_field('dynamics', 'vor', time_avg=True)
 #diag.add_field('dynamics', 'div', time_avg=True)
@@ -216,7 +215,7 @@ exp.namelist = namelist = Namelist({
     },
 
     'fms_nml': {
-        'domains_stack_size': 1000000                        # default: 0
+        'domains_stack_size': 12000000                        # default: 0
     },
 
     'fms_io_nml': {
@@ -238,19 +237,17 @@ exp.namelist = namelist = Namelist({
         'robert_coeff':0.03,
         },
 
-#    'vert_coordinate_nml': vert_coordinate_list,
-     'vert_coordinate_nml': {'bk': [0.0, 0.010755650075381708, 0.016651428686177597, 0.02502825230468589, 0.036562186048276206, 0.0519654644660681, 0.07193444937515642, 0.09708606678829826, 0.12788899823443206, 0.16459785868959553, 0.20719931510624276, 0.2553783113631363, 0.3085103150663648, 0.36568215906077817, 0.4257402221306179, 0.4873610767136191, 0.5491369541853299, 0.6096668658245512, 0.6676441212689289, 0.7219321828482185, 0.771622946715411, 0.8160741973718231, 0.8549256774859646, 0.88809556287854, 0.9157608767233256, 0.9383264081483457, 0.9563870416380483, 0.9706881752608456, 0.9820882823837139, 0.9915268420163701, 1.0],
-                             'pk':[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
+    'vert_coordinate_nml': vert_coordinate_list,
+
 })
 
-exp.set_resolution('T42',numlevs)
+exp.set_resolution('T85',numlevs)
 overwrite=False
 # start from something already spun up so that we only have to spinup the tags, which should be ~30 days ish
 # this is good for diagnosing tendencies
-restart_file='/scratch/rfajber/gfdl_data/A5/restarts/res0077.tar.gz'
+restart_file='/home/rfajber/restarts_save/A3.year5.nc'
 #Lets do a run!
 if __name__=="__main__":
-#    exp.run(1, use_restart=True, num_cores=NCORES,restart_file=restart_file)
     exp.run(1, use_restart=False, num_cores=NCORES)
     for i in range(2,100):
         exp.run(i, num_cores=NCORES)

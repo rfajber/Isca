@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-from isca import GreyCodeBase, DiagTable, Experiment, Namelist, GFDL_BASE
+from isca import IscaCodeBase, DiagTable, Experiment, Namelist, GFDL_BASE
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 # a CodeBase can be a directory on the computer,

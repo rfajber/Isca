@@ -12,4 +12,4 @@ conda activate isca_env
 
 cd $GFDL_BASE/exp/RF
 
-python frierson_test_case_water_tags.py
+python frierson_test_case_water_tags_32.py
