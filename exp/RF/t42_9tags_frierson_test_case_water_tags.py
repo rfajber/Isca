@@ -41,8 +41,8 @@ cb.compile()  # compile the source code to working directory $GFDL_WORK/codebase
 
 # create an Experiment object to handle the configuration of model parameters
 # and output diagnostics
-externalFieldTablePath='/home/rfajber/Isca/exp/RF/input/field_table'
-exp = Experiment('m0', codebase=cb,
+externalFieldTablePath='/home/rfajber/Isca/exp/RF/input/field_table_9wtags'
+exp = Experiment('t42_9wtags', codebase=cb,
                  externalFieldTablePath=externalFieldTablePath)
 
 #Tell model how to write diagnostics
@@ -104,6 +104,14 @@ diag.add_field('atmosphere', 'wtag5_sink', time_avg=True)
 diag.add_field('atmosphere', 'wtag6_sink', time_avg=True)
 diag.add_field('atmosphere', 'wtag7_sink', time_avg=True)
 diag.add_field('atmosphere', 'wtag8_sink', time_avg=True)
+diag.add_field('atmosphere', 'wtag1_precip', time_avg=True)
+diag.add_field('atmosphere', 'wtag2_precip', time_avg=True)
+diag.add_field('atmosphere', 'wtag3_precip', time_avg=True)
+diag.add_field('atmosphere', 'wtag4_precip', time_avg=True)
+diag.add_field('atmosphere', 'wtag5_precip', time_avg=True)
+diag.add_field('atmosphere', 'wtag6_precip', time_avg=True)
+diag.add_field('atmosphere', 'wtag7_precip', time_avg=True)
+diag.add_field('atmosphere', 'wtag8_precip', time_avg=True)
 diag.add_field('atmosphere', 'wtag1_src', time_avg=True)
 diag.add_field('atmosphere', 'wtag2_src', time_avg=True)
 diag.add_field('atmosphere', 'wtag3_src', time_avg=True)
@@ -250,5 +258,5 @@ restart_file='/home/rfajber/restarts_save/A3.year5.nc'
 if __name__=="__main__":
     exp.run(1, use_restart=False, num_cores=NCORES,overwrite_data=overwrite)#,
 #                            restart_file=restart_file)
-    for i in range(2,20):
+    for i in range(2,48):
         exp.run(i, num_cores=NCORES,overwrite_data=overwrite)

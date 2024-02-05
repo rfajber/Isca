@@ -146,7 +146,8 @@ dt_real      = float(dt_integer)
 
 call get_number_tracers(MODEL_ATMOS, num_prog=num_tracers)
 allocate (tracer_attributes(num_tracers))
-call spectral_dynamics_init(Time, Time_step, tracer_attributes, dry_model, nhum)
+print*, 'water_tag:',water_tag
+call spectral_dynamics_init(Time, Time_step, tracer_attributes, dry_model, nhum, water_tag)
 call get_grid_domain(is, ie, js, je)
 call get_num_levels(num_levels)
 
@@ -275,6 +276,8 @@ real    :: delta_t
 type(time_type) :: Time_next
 
 integer :: ntr
+integer :: i,j,k,n
+real :: s
 
 if(.not.module_is_initialized) then
   call error_mesg('atmosphere','atmosphere module is not initialized',FATAL)
@@ -319,17 +322,51 @@ call spectral_dynamics(Time, psg(:,:,future), ug(:,:,:,future), vg(:,:,:,future)
                        dt_psg, dt_ug, dt_vg, dt_tg, dt_tracers, wg_full, &
                        p_full(:,:,:,current), p_half(:,:,:,current), z_full(:,:,:,current))
 
+
+!RFTT do water tag fixing 
+! if (water_tag) then 
+! ! print*, 'this ran'
+! do j=js,je
+!   do i=is,ie
+!     do k=1,num_levels
+
+!       ! where ( grid_tracers(i,j,k,future,2:num_tracers) .lt. 0.0) 
+!       !   grid_tracers(i,j,k,future,2:num_tracers) = 0.0
+!       ! end where
+  
+!       s=0.
+!       do ntr = 2, num_tracers
+!         if (grid_tracers(i,j,k,future,ntr) .lt. 0.0) grid_tracers(i,j,k,future,ntr) = 0.0  
+!         s = s + grid_tracers(i,j,k,future,ntr)
+!       end do
+
+!       s = s + 1.0e-9
+!       ! if (s .gt. 0.0) then  
+!         s = grid_tracers(i,j,k,future,1) / s
+!         if (k .eq. num_levels-5) then 
+!           print *, s
+!         end if 
+!         do ntr = 2, num_tracers
+!           grid_tracers(i,j,k,future,ntr) = grid_tracers(i,j,k,future,ntr)  * s
+!         end do
+!       ! end if 
+
+!     end do 
+!   end do 
+! end do
+! end if
+                      
 ! RFTT - do some numerical checks on the water tags
 if (water_tag) then 
 !  sum_tracers = sum_tracers * 0 
-  do ntr = 2,num_tracers
-    where ( grid_tracers(:,:,:,future,ntr) .lt. 0.0) 
-      grid_tracers(:,:,:,future,ntr) = 0.0
+!  do ntr = 2,num_tracers
+    where ( grid_tracers(:,:,:,future,2:num_tracers) .lt. 0.0) 
+      grid_tracers(:,:,:,future,2:num_tracers) = 0.0
     end where
-  end do  
+!  end do  
   
   grid_tracers(:,:,:,future,2:num_tracers) = grid_tracers(:,:,:,future,2:num_tracers) * & 
-  spread( grid_tracers(:,:,:,future,1) / ( sum(grid_tracers(:,:,:,future,2:num_tracers),4) + 1e-6 ), 4, num_tracers-1)
+  spread( grid_tracers(:,:,:,future,1) / ( sum(grid_tracers(:,:,:,future,2:num_tracers),4) + 1e-8 ), 4, num_tracers-1)
 
 end if 
 

@@ -175,7 +175,9 @@ integer :: id_tdt_revap,  id_qdt_revap,    id_prec_revap,  &
            id_tdt_conv, id_qdt_conv, id_prec_conv, id_snow_conv, &
            id_q_conv_col, id_t_conv_col, id_mc,&
            id_qldt_conv, id_qidt_conv, id_qadt_conv, &
-           id_ql_conv_col, id_qi_conv_col, id_qa_conv_col
+           id_ql_conv_col, id_qi_conv_col, id_qa_conv_col,&
+          id_qdt_conv_cond
+
 integer, allocatable, dimension(:) :: id_tracer_conv, id_tracer_conv_col
 
 character(len=3) :: mod_name = 'ras'
@@ -338,6 +340,11 @@ logical  :: do_ras_tracer = .false.
      '3D Precipitation rate from RAS',      'kg/m2/s',  &
                         missing_value=missing_value               )
 
+  id_qdt_conv_cond = register_diag_field ( mod_name, &
+  'cond_conv_3d', axes(1:3), Time, &
+  '3D condensation rate from RAS',      'kg/kg/s',  &
+                      missing_value=missing_value               )
+                   
    id_pcldb = register_diag_field ( mod_name, &
      'pcldb', axes(1:2), Time, &
      'Pressure at cloud base from RAS',              'hPa' )
@@ -496,7 +503,8 @@ end subroutine ras_end
                   mask,    kbot,                                  &
                   !OPTIONAL OUT
                   mc0,    ql0, qi0, qa0,  dl0, di0, da0,          &
-                  ras_tracers, qtrras)                            
+                  ras_tracers, qtrras,&
+                  dtq_cond,dtq_evap)                            
 
 !=======================================================================
 ! ***** DRIVER FOR RAS
@@ -560,6 +568,8 @@ end subroutine ras_end
   real, intent(out), OPTIONAL, dimension(:,:,:) :: mc0
   real, intent(out), OPTIONAL, dimension(:,:,:) :: dl0, di0, da0
   real,  intent(out), dimension(:,:,:,:), optional :: qtrras
+
+  real,intent(out),optional, dimension(:,:,:) :: dtq_cond,dtq_evap
 
 !---------------------------------------------------------------------
 !  (Intent local)
@@ -627,6 +637,7 @@ end subroutine ras_end
   Lda0       = do_strat
   Lmc0       = ( do_strat .or. id_mc > 0 )
   LR0        = .TRUE. !PRESENT( R0 )
+  ! print *, 'LR0',LR0
 
   if (num_ras_tracers > 0) then
     if (present (ras_tracers) .and. present(qtrras)) then
@@ -1173,6 +1184,9 @@ endif
      if ( id_prec_conv_3d > 0 ) then
         used = send_data ( id_prec_conv_3d, cuprc3d, Time, is, js, 1 )
      endif
+     if (id_qdt_conv_cond > 0 ) then
+      used  = send_data(id_qdt_conv_cond, -cuprc3d/pmass,Time,is,js)
+     endif
      if ( id_pcldb > 0 ) then
         used = send_data ( id_pcldb, pcldb0, Time, is, js )
      endif
@@ -1293,7 +1307,14 @@ endif
    enddo
 !=====================================================================
 
+   dtq_cond = cuprc3d/pmass
+   dtq_evap = dqvap_ev0
 
+  !  print*, 'in ras'
+  !  print*, num_ras_tracers
+  !  print*, sum(sum(sum(dqvap0,dim=1),dim=1),dim=1)
+  !  print*, sum(sum(sum(qtrras,dim=1),dim=1),dim=1)
+  !  print*, sum(sum(sum(ras_tracers,dim=1),dim=1),dim=1)
 
   end SUBROUTINE RAS
 
@@ -1614,31 +1635,31 @@ endif
 
 if ( LRcu ) then
 
-!     wlR = tracer(k,:)
+    wlR = tracer(k,:)
      
-! do l = km1,ic,-1
-!     xx1 = eta(l) - eta(l+1)
-!     wlR = wlR + xx1 * tracer(l,:)
-! end do
-! 
-!!do cloud base level
-!     xx1     = 0.5 * cp_by_dp(k) / Cp_Air / onebg
-!     dtracercu(k,:) = ( tracer(km1,:) - tracer(k,:) ) * xx1
+do l = km1,ic,-1
+    xx1 = eta(l) - eta(l+1)
+    wlR = wlR + xx1 * tracer(l,:)
+end do
+
+!do cloud base level
+    xx1     = 0.5 * cp_by_dp(k) / Cp_Air / onebg
+    dtracercu(k,:) = ( tracer(km1,:) - tracer(k,:) ) * xx1
      
-! if ( ic1 <= km1 ) then
-! do l = km1,ic1,-1
-!     xx1     = 0.5 * cp_by_dp(l) / Cp_Air / onebg
-!     dtracercu(l,:) = ( eta(l+1) * ( tracer(l  ,:) - tracer(l+1,:) ) + &
-!                   eta(l  ) * ( tracer(l-1,:) - tracer(l  ,:) ) ) * xx1
-! end do
-! end if
-!
-! !do cloud top level
-!     xx1      = cp_by_dp(ic) / Cp_Air / onebg
-!     xx2      = 0.5 * xx1
-!     dtracercu(ic,:) = ( eta(ic1) * ( tracer(ic,:) - tracer(ic1,:) ) * xx2 ) + &
-!                  ( wlR      - eta(ic) * tracer(ic,:)  ) * xx1
-!
+if ( ic1 <= km1 ) then
+do l = km1,ic1,-1
+    xx1     = 0.5 * cp_by_dp(l) / Cp_Air / onebg
+    dtracercu(l,:) = ( eta(l+1) * ( tracer(l  ,:) - tracer(l+1,:) ) + &
+                  eta(l  ) * ( tracer(l-1,:) - tracer(l  ,:) ) ) * xx1
+end do
+end if
+
+!do cloud top level
+    xx1      = cp_by_dp(ic) / Cp_Air / onebg
+    xx2      = 0.5 * xx1
+    dtracercu(ic,:) = ( eta(ic1) * ( tracer(ic,:) - tracer(ic1,:) ) * xx2 ) + &
+                 ( wlR      - eta(ic) * tracer(ic,:)  ) * xx1
+
  end if
 
 !------------ Cloud liquid, ice, and fraction

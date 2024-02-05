@@ -26,7 +26,7 @@ cb = SocratesCodeBase.from_directory(GFDL_BASE)
 exp = Experiment('soc_aquaplanet_with_clouds', codebase=cb)
 exp.clear_rundir()
 
-inputfiles = [os.path.join(GFDL_BASE,'input/rrtm_input_files/ozone_1990.nc')]
+inputfiles = [os.path.join(GFDL_BASE,'input/rrtm_input_files/ozone_monthly/ozone_1990.nc')]
 
 #Tell model how to write diagnostics
 diag = DiagTable()
@@ -160,7 +160,12 @@ exp.namelist = namelist = Namelist({
         'prescribe_initial_dist':True,
         'evaporation':True,  
         'depth': 2.5,                          #Depth of mixed layer used
-        'albedo_value': 0.2,                  #Albedo value used      
+        'albedo_value': 0.38,                  #Albedo value used      
+        'do_qflux': True
+    },
+
+    'qflux_nml': {
+        'qflux_amp': 30.0
     },
 
     'qe_moist_convection_nml': {
@@ -223,7 +228,7 @@ exp.namelist = namelist = Namelist({
 #Lets do a run!
 if __name__=="__main__":
 
-        cb.compile(debug=False)
+        #cb.compile(debug=False)
         #Set up the experiment object, with the first argument being the experiment name.
         #This will be the name of the folder that the data will appear in.
 

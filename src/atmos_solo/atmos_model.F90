@@ -369,7 +369,7 @@ contains
 !-----------------------------------------------------------------------
    call mpp_clock_begin (id_end)
 
-      call atmosphere_end
+      ! call atmosphere_end
 
 !----- compute current time in days,hours,minutes,seconds -----
 

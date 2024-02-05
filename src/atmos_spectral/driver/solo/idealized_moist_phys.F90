@@ -124,7 +124,6 @@ logical :: do_socrates_radiation = .false.
 !s MiMA uses damping
 logical :: do_damping = .false.
 
-
 logical :: mixed_layer_bc = .false.
 logical :: gp_surface = .false. !s Use Schneider & Liu 2009's prescription of lower-boundary heat flux
 
@@ -150,6 +149,10 @@ real :: robert_bucket = 0.04   ! default robert coefficient for bucket depth LJJ
 real :: raw_bucket = 0.53       ! default raw coefficient for bucket depth LJJ
 ! end RG Add bucket
 
+!RF - these are extra options for doing some evaporative resistance experiments.
+integer :: evap_resistance_option = 0
+real :: rough_moist_prefactor = 1.0
+
 namelist / idealized_moist_phys_nml / turb, lwet_convection, do_bm, do_ras, roughness_heat,  &
                                       do_cloud_simple,                                       &
                                       two_stream_gray, do_rrtm_radiation, do_damping,&
@@ -160,7 +163,8 @@ namelist / idealized_moist_phys_nml / turb, lwet_convection, do_bm, do_ras, roug
                                       gp_surface, convection_scheme,          &
                                       bucket, init_bucket_depth, init_bucket_depth_land, & !RG Add bucket 
                                       max_bucket_depth_land, robert_bucket, raw_bucket, &
-                                      do_socrates_radiation 
+                                      do_socrates_radiation, &
+                                      evap_resistance_option,rough_moist_prefactor
 
 
 integer, parameter :: num_time_levels = 2 !RG Add bucket - number of time levels added to allow timestepping in this module
@@ -170,6 +174,7 @@ real, allocatable, dimension(:,:    ) :: dt_bucket, filt   ! RG Add bucket
 !RFTT add tagged tracer variables
 logical :: water_tag
 real :: a_small_number = 1e-6
+real, allocatable, dimension(:,:,:,:) :: dt_tracers_temp
 
 real, allocatable, dimension(:,:)   ::                                        &
      z_surf,               &   ! surface height
@@ -276,6 +281,7 @@ integer ::           &
      id_precip,      &   ! rain and snow from condensation and convection
      id_conv_dt_tg,  &   ! temperature tendency from convection
      id_conv_dt_qg,  &   ! temperature tendency from convection
+     id_conv_dt_qg_2,  &   ! temperature tendency from convection
      id_cond_dt_tg,  &   ! temperature tendency from condensation
      id_cond_dt_qg,  &   ! temperature tendency from condensation
      id_bucket_depth,      &   ! bucket depth variable for output
@@ -294,6 +300,9 @@ integer ::           &
      id_v_10m,       & ! used for 10m winds and 2m temp
      id_q_2m,        & ! used for 2m specific humidity
      id_rh_2m          ! used for 2m relative humidity
+
+! Theta Calcs
+  integer ::   id_theta,id_theta_dot,id_theta_dot_mst, id_dt_qg
 
 integer, allocatable, dimension(:,:) :: convflag ! indicates which qe convection subroutines are used
 real,    allocatable, dimension(:,:) :: rad_lat, rad_lon
@@ -318,14 +327,15 @@ integer :: num_tracers, ntr
 real, allocatable, dimension(:,:,:,:) :: tracer_mask
 real, allocatable, dimension(:,:,:,:) :: sink, src
 !    real, dimension(5) :: sn = (/-1.0, -0.5, 0.0, 0.5, 1.0/)
-!real, dimension(9) :: ln = (/-90., -48.5904, -30., -14.4775, 0.0, 14.4775, 30., 48.5904, 90./)
-real, dimension(5) :: ln = (/-90., -30., 0.0, 30., 90./)
+real, dimension(9) :: ln = (/-90., -48.5904, -30., -14.4775, 0.0, 14.4775, 30., 48.5904, 90./)
+!real, dimension(5) :: ln = (/-90., -30., 0.0, 30., 90./)
 !real,dimension(2) :: ln =(-90,90)
 real, dimension(:), allocatable :: deg_lat
 !integer :: is,ie,js,je,nsphum,num_levels,num_tracers,j,ntr
 integer :: i,j 
-integer, dimension(:), allocatable :: id_tr_sink, id_tr_src
+integer, dimension(:), allocatable :: id_tr_sink, id_tr_src, id_tr_precip, id_tr_ras
 
+real, allocatable, dimension(:,:,:) :: dtq_ras_cond, dtq_ras_evap
 
 !=================================================================================================================================
 contains
@@ -566,6 +576,11 @@ allocate(p_half_1d(num_levels+1), ln_p_half_1d(num_levels+1))
 allocate(p_full_1d(num_levels  ), ln_p_full_1d(num_levels  ))
 allocate(capeflag     (is:ie, js:je))
 
+ allocate(dt_tracers_temp (is:ie,js:je,num_levels,num_tracers))
+
+! RFTT set water tag variable
+water_tag = water_tag_in
+
 call get_surf_geopotential(z_surf)
 z_surf = z_surf/grav
 
@@ -611,6 +626,24 @@ if(trim(land_option) .eq. 'input') then
     end where
 
 endif
+
+!RF - add some stuff to change the moisture roughness length for evaporation
+select case (evap_resistance_option)
+case(1)
+  rough_moist = rough_moist * rough_moist_prefactor
+case(2)
+  do j = js,je
+    if ( abs(deg_lat(j)) .lt. 30 ) then
+      rough_moist(:,j) = rough_moist(:,j) * rough_moist_prefactor
+    end if 
+  end do
+case(3)
+  do j = js,je
+    if ( abs(deg_lat(j)) .ge. 30 ) then
+      rough_moist(:,j) = rough_moist(:,j) * rough_moist_prefactor
+    end if 
+  end do
+end select
 
 if(bucket) then
 where(land)
@@ -736,18 +769,24 @@ case(RAS_CONV)
 
        !Commented code not used such that tracers are not advected by RAS. Could implement in future.
        
-       ! do n=1, num_tracers
-       !   if (query_method ('convection', MODEL_ATMOS, n, scheme)) then
-       !    num_ras_tracers = num_ras_tracers + 1
-       !    tracers_in_ras(n) = .true.
-       !   endif
-       ! end do
+      if (water_tag) then 
+        tracers_in_ras=.True.
+        num_ras_tracers=num_tracers
+        do_tracers_in_ras = .true.
+      end if
 
-       ! if (num_ras_tracers > 0) then
-       !   do_tracers_in_ras = .true.
-       ! else
-       !   do_tracers_in_ras = .false.
-       ! endif
+      ! do n=1, num_tracers
+      !   if (query_method ('convection', MODEL_ATMOS, n, scheme)) then
+      !    num_ras_tracers = num_ras_tracers + 1
+      !    tracers_in_ras(n) = .true.
+      !   endif
+      ! end do
+
+      ! if (num_ras_tracers > 0) then
+      !   do_tracers_in_ras = .true.
+      ! else
+      !   do_tracers_in_ras = .false.
+      ! endif
 
        !----------------------------------------------------------------------
        !    for each tracer, determine if it is to be transported by convect-
@@ -757,13 +796,18 @@ case(RAS_CONV)
        !    by that scheme.
        !----------------------------------------------------------------------
 
-        call ras_init (do_strat, axes,Time,tracers_in_ras) 
+      !  print*, tracers_in_ras
+      !  print*, num_ras_tracers
+
+       call ras_init (do_strat, axes,Time,tracers_in_ras) 
 
 end select
 
 !jp not sure why these diag_fields are fenced when condensation ones above are not...
 !if(lwet_convection .or. do_bm) then
    id_conv_dt_qg = register_diag_field(mod_name, 'dt_qg_convection',          &
+        axes(1:3), Time, 'Moisture tendency from convection','kg/kg/s')
+  id_conv_dt_qg = register_diag_field(mod_name, 'dt_qg_convection_2',          &
         axes(1:3), Time, 'Moisture tendency from convection','kg/kg/s')
    id_conv_dt_tg = register_diag_field(mod_name, 'dt_tg_convection',          &
         axes(1:3), Time, 'Temperature tendency from convection','K/s')
@@ -821,9 +865,19 @@ endif
    id_rh = register_diag_field ( mod_name, 'rh',                           &
         axes(1:3), Time, 'relative humidity', 'percent')
 
-! RFTT set water tag variable
-water_tag = water_tag_in
-!print*, 'water_tag:', water_tag
+  id_theta = register_diag_field ( mod_name, 'theta',                           &
+  axes(1:3), Time, 'potential temperature', 'K')
+
+  id_dt_qg = register_diag_field ( mod_name, 'dt_qg',                           &
+  axes(1:3), Time, 'total moisture tendency', 'kg/kg/s')
+
+  id_theta_dot = register_diag_field ( mod_name, 'dt_theta',                           &
+  axes(1:3), Time, 'd/dt potential temperature', 'K/s')
+
+  id_theta_dot_mst = register_diag_field ( mod_name, 'dt_theta_mst',                           &
+  axes(1:3), Time, 'd/dt potential temperature moist', 'K/s')
+
+        !print*, 'water_tag:', water_tag
 ! RFTT - intialize the water tag model here 
 ! if (water_tag) then
 ! !  print*, 'started initialization'
@@ -835,6 +889,10 @@ water_tag = water_tag_in
 !                        )
 !   endif 
 
+allocate(dtq_ras_cond(is:ie,js:je,num_levels))
+allocate(dtq_ras_evap(is:ie,js:je,num_levels))
+
+!RFTT - allocate extra vars
 if (water_tag) then
 
   allocate(tracer_mask (is:ie,js:je,num_levels,num_tracers)); tracer_mask=0.0
@@ -845,6 +903,8 @@ if (water_tag) then
   call get_deg_lat(deg_lat)
 
   allocate(id_tr_sink(num_tracers))
+  allocate(id_tr_ras(num_tracers))
+  allocate(id_tr_precip(num_tracers))
   allocate(id_tr_src(num_tracers))
 
 
@@ -882,6 +942,8 @@ if (water_tag) then
   do ntr=1,num_tracers
   call get_tracer_names(MODEL_ATMOS, ntr, tname, longname, units)
   id_tr_sink(ntr) = register_diag_field(mod_name, trim(tname)//trim('_sink'), axes(1:3), Time, trim(longname)//trim(' sink'), trim(units)//trim('/s')) 
+  id_tr_ras(ntr) = register_diag_field(mod_name, trim(tname)//trim('_ras'), axes(1:3), Time, trim(longname)//trim(' ras'), trim(units)//trim('/s')) 
+  id_tr_precip(ntr) = register_diag_field(mod_name, trim(tname)//trim('_precip'), axes(1:3), Time, trim(longname)//trim(' sink'), trim(units)//trim('kg/s')) 
   id_tr_src(ntr) =  register_diag_field(mod_name, trim(tname)//trim('_src'),  axes(1:3), Time, trim(longname)//trim(' src'),  trim(units)//trim('/s')) 
   enddo        
 end if 
@@ -996,6 +1058,12 @@ case(DRY_CONV)
 
 case(RAS_CONV)
 
+    dt_tracers_temp=0.0
+
+    ! print*, 'before RAS'
+    ! print*, sum(sum(sum(dt_tracers_temp,dim=1),dim=1),dim=1)
+    ! print*, sum(sum(sum(grid_tracers(:,:,:,previous,:),dim=1),dim=1),dim=1)
+
     call ras   (is,   js,     Time,                                                  &  
                 tg(:,:,:,previous),   grid_tracers(:,:,:,previous,nsphum),           &
                 ug(:,:,:,previous),  vg(:,:,:,previous),    p_full(:,:,:,previous),  &
@@ -1007,8 +1075,27 @@ case(RAS_CONV)
                 !OPTIONAL OUT
                 mc,   tracer(:,:,:), tracer(:,:,:),                          &
                tracer(:,:,:),  tracertnd(:,:,:),                             &
-               tracertnd(:,:,:), tracertnd(:,:,:))
-                
+              ! tracertnd(:,:,:), tracertnd(:,:,:))
+               tracertnd(:,:,:), tracertnd(:,:,:),&
+               grid_tracers(:,:,:,previous,:),dt_tracers_temp(:,:,:,:),&
+               dtq_ras_cond,dtq_ras_evap)
+  
+    ! print*, 'after RAS'
+    ! print*, sum(sum(sum(dt_tracers_temp,dim=3),dim=2),dim=1)
+    ! print*, sum(sum(sum(grid_tracers(:,:,:,previous,:),dim=3),dim=2),dim=1)
+           
+    ! SUBROUTINE RAS( is,     js,      Time,      
+    !             temp0,   qvap0,     &
+    !             uwnd0,  vwnd0,  pres0,  
+    !             pres0_int, zhalf0,  coldT0,    &
+    !             dtime,  dtemp0,  dqvap0,    duwnd0,  dvwnd0,    &
+    !             rain0,  snow0,   do_strat,                      &
+    !             !OPTIONAL IN
+    !             mask,    kbot,                                  &
+    !             !OPTIONAL OUT
+    !             mc0,    ql0, qi0, qa0,  dl0, di0, da0,          &
+    !             ras_tracers, qtrras)                            
+
 
       !update tendencies - dT and dq are done after cases
       tg_tmp = tg(:,:,:,previous) + conv_dt_tg
@@ -1018,7 +1105,10 @@ case(RAS_CONV)
 
       precip     = precip + rain + snow
 
+   if (id_tr_ras(1)>0) used = send_data(id_tr_ras(1), dt_tracers_temp(:,:,:,1), Time)
+
    if(id_conv_dt_qg > 0) used = send_data(id_conv_dt_qg, conv_dt_qg, Time)
+   if(id_conv_dt_qg_2 > 0) used = send_data(id_conv_dt_qg_2, conv_dt_qg, Time)
    if(id_conv_dt_tg > 0) used = send_data(id_conv_dt_tg, conv_dt_tg, Time)
    if(id_conv_rain  > 0) used = send_data(id_conv_rain, precip, Time)
 
@@ -1484,6 +1574,15 @@ endif
 
       end where
 
+      select case(r_conv_scheme)
+      case(RAS_CONV)
+
+        sink(:,:,:,ntr) =  sink(:,:,:,ntr) + (dtq_ras_cond) *  &
+        grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
+
+        src(:,:,:,ntr) = src(:,:,:,ntr) + tracer_mask(:,:,:,ntr)*(dtq_ras_evap)
+
+      case default
       where ( (conv_dt_qg) .lt. 0)
 
         sink(:,:,:,ntr) =  sink(:,:,:,ntr) + (conv_dt_qg) *  &
@@ -1494,7 +1593,8 @@ endif
          src(:,:,:,ntr) = src(:,:,:,ntr) + tracer_mask(:,:,:,ntr)*(conv_dt_qg)
     
       end where
-
+      end select
+        
       where ( (cond_dt_qg) .lt. 0)
 
         sink(:,:,:,ntr) =  sink(:,:,:,ntr) + (cond_dt_qg) *  &
@@ -1509,11 +1609,28 @@ endif
       if(id_tr_sink(ntr) > 0) used = send_data(id_tr_sink(ntr), sink(:,:,:,ntr), Time)
       if(id_tr_src(ntr) > 0) used = send_data(id_tr_src(ntr), src(:,:,:,ntr), Time)
 
+      if (id_tr_precip(ntr)>0) then 
+        used  = send_data( id_tr_precip(ntr) , &
+        sum ( sink(:,:,:,ntr) *( p_half(:,:,2:num_levels+1,current) - p_half(:,:,1:num_levels,current) / GRAV ), dim=3), &
+         Time)
+      end if 
+
       dt_tracers(:,:,:,ntr) = src(:,:,:,ntr) + sink(:,:,:,ntr)
+
+      select case(r_conv_scheme)
+      case(RAS_CONV)
+        dt_tracers(:,:,:,ntr) = dt_tracers(:,:,:,ntr) + dt_tracers_temp(:,:,:,ntr)
+        if(id_tr_ras(ntr) > 0) used = send_data(id_tr_ras(ntr), dt_tracers_temp(:,:,:,ntr), Time)
+      end select
 
     end do 
   end if  
 
+  ! Extra theta diagnostics
+  if (id_theta > 0) used = send_data(id_theta, tg(:,:,:,previous)*(1.0e5/p_full(:,:,:,previous))**(2./7.),Time)
+  if (id_theta_dot>0) used = send_data(id_theta_dot, (1.0e5/p_full(:,:,:,previous))**(2./7.)*dt_tg,Time)
+  if (id_theta_dot_mst>0) used = send_data(id_theta_dot_mst, (1.0e5/p_full(:,:,:,previous))**(2./7.)*(cond_dt_tg+conv_dt_tg),Time )
+  if (id_dt_qg > 0 ) used = send_data(id_dt_qg,  dt_tracers(:,:,:,nsphum), Time)
 end subroutine idealized_moist_phys
 !=================================================================================================================================
 subroutine idealized_moist_phys_end
@@ -1541,15 +1658,27 @@ if(do_socrates_radiation) call run_socrates_end
 !   call tagged_tracers_end
 ! endif 
 
-deallocate(tracer_mask)
-deallocate(sink)
-deallocate(src)
-deallocate(deg_lat)
-deallocate(id_tr_sink)
-deallocate(id_tr_src)
+! deallocate(dt_tracers_temp)
 
+if (water_tag) then
+  deallocate(tracer_mask)
+  deallocate(sink)
+  deallocate(src)
+  deallocate(deg_lat)
+  deallocate(id_tr_sink)
+  deallocate(id_tr_src)
+
+  select case(r_conv_scheme)
+  case(RAS_CONV)
+  deallocate(dtq_ras_cond)
+  deallocate(dtq_ras_evap)
+  end select
+
+  deallocate(dt_tracers_temp)
+end if 
 
 end subroutine idealized_moist_phys_end
+
 !=================================================================================================================================
 
 subroutine rh_calc(pfull,T,qv,RH) !s subroutine copied from 2006 FMS MoistModel file moist_processes.f90 (v14 2012/06/22 14:50:00).

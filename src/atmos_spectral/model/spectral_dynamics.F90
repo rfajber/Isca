@@ -146,6 +146,9 @@ character(len=32), parameter :: default_representation = 'spectral'
 character(len=32), parameter :: default_advect_vert    = 'second_centered'
 character(len=32), parameter :: default_hole_filling   = 'off'
 
+!RFTT
+logical :: water_tag = .false.
+
 !===============================================================================================
 ! namelist variables
 
@@ -227,13 +230,14 @@ contains
 
 !===============================================================================================
 
-subroutine spectral_dynamics_init(Time, Time_step_in, tracer_attributes, dry_model_out, nhum_out, ocean_mask)
+subroutine spectral_dynamics_init(Time, Time_step_in, tracer_attributes, dry_model_out, nhum_out, water_tag_in, ocean_mask)
 
 type(time_type), intent(in) :: Time, Time_step_in
 type(tracer_type), intent(inout), dimension(:) :: tracer_attributes
 logical, intent(out) :: dry_model_out
 integer, intent(out) :: nhum_out
 logical, optional, intent(in), dimension(:,:) :: ocean_mask
+logical, optional, intent(in) :: water_tag_in
 
 integer :: num_total_wavenumbers, unit, k, seconds, days, ierr, io, ntr, nsphum, nmix_rat
 logical :: south_to_north = .true.
@@ -261,6 +265,11 @@ if(module_is_initialized) return
     enddo
 20  call close_file (unit)
 #endif
+
+!RFTT
+if ( present(water_tag_in) ) then 
+  water_tag = water_tag_in
+end if
 
 call write_version_number(version, tagname)
 if(mpp_pe() == mpp_root_pe()) write (stdlog(), nml=spectral_dynamics_nml)
@@ -1123,6 +1132,8 @@ real   , intent(in   )  :: delta_t
 complex, intent(out  ), dimension(ms:me, ns:ne, num_levels, num_tracers) :: part_filt_trs_out
 real, intent(out  ), dimension(is:ie, js:je, num_levels, num_tracers) :: part_filt_tr_out
 
+integer:: i,j,k,n
+real :: s
 
 complex, dimension(ms:me, ns:ne, num_levels) :: dt_trs
 real,    dimension(is:ie, js:je, num_levels) :: dp, dt_tmp, tr_future

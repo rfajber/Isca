@@ -5,7 +5,7 @@ import numpy as np
 from isca import SocratesCodeBase, DiagTable, Experiment, Namelist, GFDL_BASE
 from isca.util import exp_progress
 
-NCORES = 16
+NCORES = 32
 base_dir = os.path.dirname(os.path.realpath(__file__))
 # a CodeBase can be a directory on the computer,
 # useful for iterative development
@@ -26,17 +26,17 @@ cb = SocratesCodeBase.from_directory(GFDL_BASE)
 exp = Experiment('soc_aquaplanet', codebase=cb)
 exp.clear_rundir()
 
-inputfiles = [os.path.join(GFDL_BASE,'input/rrtm_input_files/ozone_1990.nc')]
+inputfiles = [os.path.join(GFDL_BASE,'input/rrtm_input_files/ozone_monthly/ozone_1990.nc')]
 
 #Tell model how to write diagnostics
 diag = DiagTable()
-diag.add_file('atmos_monthly', 30, 'days', time_units='days')
+diag.add_file('atmos_daily', 1, 'days', time_units='days')
 
 #Write out diagnostics need for vertical interpolation post-processing
 diag.add_field('dynamics', 'ps', time_avg=True)
 diag.add_field('dynamics', 'bk')
 diag.add_field('dynamics', 'pk')
-diag.add_field('dynamics', 'zsurf')
+# diag.add_field('dynamics', 'zsurf')
 
 #Tell model which diagnostics to write
 diag.add_field('atmosphere', 'precipitation', time_avg=True)
@@ -128,7 +128,8 @@ exp.namelist = namelist = Namelist({
     },
 
     'atmosphere_nml': {
-        'idealized_moist_model': True
+        'idealized_moist_model': True,
+        'water_tags': False
     },
 
     #Use a large mixed-layer depth, and the Albedo of the CTRL case in Jucker & Gerber, 2017
@@ -138,7 +139,13 @@ exp.namelist = namelist = Namelist({
         'evaporation':True,  
         'depth': 2.5,                          #Depth of mixed layer used
         'albedo_value': 0.38,                  #Albedo value used      
+        'do_qflux': True
     },
+
+    'qflux_nml': {
+        'qflux_amp': 30.0
+    },
+
 
     'qe_moist_convection_nml': {
         'rhbm':0.7,
@@ -195,7 +202,7 @@ exp.namelist = namelist = Namelist({
 #Lets do a run!
 if __name__=="__main__":
 
-        cb.compile(debug=False)
+        #cb.compile(debug=False)
         #Set up the experiment object, with the first argument being the experiment name.
         #This will be the name of the folder that the data will appear in.
 
