@@ -318,8 +318,9 @@ integer :: num_tracers, ntr
 real, allocatable, dimension(:,:,:,:) :: tracer_mask
 real, allocatable, dimension(:,:,:,:) :: sink, src
 !    real, dimension(5) :: sn = (/-1.0, -0.5, 0.0, 0.5, 1.0/)
-!real, dimension(9) :: ln = (/-90., -48.5904, -30., -14.4775, 0.0, 14.4775, 30., 48.5904, 90./)
-real, dimension(5) :: ln = (/-90., -30., 0.0, 30., 90./)
+!real, dimension(9) :: ln = (/0.0, 7.1808, 14.4775, 22.0243, 30., 38.6822, 48.5904, 61.0450, 90./)
+real, dimension(9) :: ln = (/-90.0, -48.5904, -30., -14.4775, 0.0, 14.4775, 30., 48.5904, 90./)
+!real, dimension(5) :: ln = (/-90., -30., 0.0, 30., 90./)
 !real,dimension(2) :: ln =(-90,90)
 real, dimension(:), allocatable :: deg_lat
 !integer :: is,ie,js,je,nsphum,num_levels,num_tracers,j,ntr
@@ -1398,6 +1399,29 @@ if(turb) then
                             dedq_atm(:,:),                                 &
                               albedo(:,:))
    endif
+   
+   ! RFTT - handling surface fluxes before they get passed to the diffusion scheme
+   if (water_tag) then 
+
+    do ntr=2,num_tracers
+
+      where (Tri_surf%delta_tr(:,:,nsphum) .lt. 0)
+
+      Tri_surf%delta_tr(:,:,ntr) = Tri_surf%delta_tr(:,:,ntr) + Tri_surf%delta_tr(:,:,nsphum) * &  
+      grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
+
+      elsewhere
+
+      Tri_surf%delta_tr(:,:,ntr) = Tri_surf%delta_tr(:,:,ntr) + tracer_mask(:,:,num_levels,ntr) * Tri_surf%delta_tr(:,:,nsphum)
+
+      end where 
+
+    end do
+
+    ! do ntr=2,num_tracers
+    !   Tri_surf%delta_tr(:,:,ntr) = Tri_surf%delta_tr(:,:,ntr) + Tri_surf%delta_tr(:,:,nsphum) * tracer_mask(:,:,num_levels,ntr)
+    ! end do
+   end if 
 
    call gcm_vert_diff_up (1, 1, delta_t, Tri_surf, dt_tg(:,:,:), dt_tracers(:,:,:,nsphum), dt_tracers(:,:,:,:))
 
@@ -1468,21 +1492,35 @@ endif
 
 !RFTT
   if (water_tag) then 
-
+    sink = 0.0
+    src = 0.0
+    
     do ntr=2,num_tracers
 
-      where (flux_q .lt. 0)
 
-        sink(:,:,num_levels,ntr) =  sink(:,:,num_levels,ntr) + (flux_q) / &
-        ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV ) *  &
-        grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
+      ! where (Tri_surf%delta_tr(:,:,ntr) .lt. 0)
 
-      elsewhere
+      ! sink(:,:,num_levels,ntr) = sink(:,:,num_levels,ntr) + Tri_surf%delta_tr(:,:,ntr) * &  
+      ! grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
 
-        src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + tracer_mask(:,:,num_levels,ntr) * &
-        flux_q / ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV )
+      ! elsewhere
 
-      end where
+      ! src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + tracer_mask(:,:,num_levels,ntr) * Tri_surf%delta_tr(:,:,ntr)
+
+      ! end where 
+      
+      ! where (flux_q .lt. 0)
+
+      !   sink(:,:,num_levels,ntr) =  sink(:,:,num_levels,ntr) + (flux_q) / &
+      !   ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV ) *  &
+      !   grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
+
+      ! elsewhere
+
+      !   src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + tracer_mask(:,:,num_levels,ntr) * &
+      !   flux_q / ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV )
+
+      ! end where
 
       where ( (conv_dt_qg) .lt. 0)
 
@@ -1505,13 +1543,34 @@ endif
          src(:,:,:,ntr) = src(:,:,:,ntr) + tracer_mask(:,:,:,ntr)*(cond_dt_qg)
     
       end where
-    
+
+    dt_tracers(:,:,:,ntr) = dt_tracers(:,:,:,ntr) + src(:,:,:,ntr) + sink(:,:,:,ntr)
+
+    end do 
+    !
+
+    !enforce conservation!
+
+    ! sink(:,:,:,2:num_tracers) = sink(:,:,:,2:num_tracers) * &
+    ! spread( non_diff_dt_qg(:,:,:) / sum(sink(:,:,:,2:num_tracers),4) + a_small_number, 4, num_tracers-1  )
+
+    ! src(:,:,:,2:num_tracers) = src(:,:,:,2:num_tracers) * &
+    ! spread( non_diff_dt_qg(:,:,:) / sum(sink(:,:,:,2:num_tracers),4) + a_small_number, 4, num_tracers-1  )
+
+    ! loop through to set ouputs and dt_tracers
+    do ntr=2,num_tracers
+
+      where( Tri_surf%delta_tr(:,:,ntr) .gt. 0.0)
+        src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + Tri_surf%delta_tr(:,:,ntr)/delta_t
+      elsewhere
+        sink(:,:,num_levels,ntr) = sink(:,:,num_levels,ntr) + Tri_surf%delta_tr(:,:,ntr)/delta_t
+      end where
+
       if(id_tr_sink(ntr) > 0) used = send_data(id_tr_sink(ntr), sink(:,:,:,ntr), Time)
       if(id_tr_src(ntr) > 0) used = send_data(id_tr_src(ntr), src(:,:,:,ntr), Time)
 
-      dt_tracers(:,:,:,ntr) = src(:,:,:,ntr) + sink(:,:,:,ntr)
-
     end do 
+
   end if  
 
 end subroutine idealized_moist_phys

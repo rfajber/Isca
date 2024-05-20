@@ -2,11 +2,75 @@ import os
 
 import numpy as np
 
+import argparse
+
 from isca import GreyCodeBase, DiagTable, Experiment, Namelist, GFDL_BASE
 
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--NCORES', 
+                    default=32,
+                    type=int)
+parser.add_argument('--hroutput', 
+                    default=False,
+                    type=bool)
+parser.add_argument('--carbon_conc', 
+                    default=360.0,
+                    type=float)
+parser.add_argument('--rhbm', 
+                    default=0.8,
+                    type=float)
+parser.add_argument('--tau_bm', 
+                    default=7200.0,
+                    type=float)
+parser.add_argument('--resolution',
+                    default='T42',
+                    type=str)
+parser.add_argument('--qflux_amp',
+                    default=0.0,
+                    type=float)
+parser.add_argument('--warmpool_amp',
+                    default=0.0,
+                    type=float)
+parser.add_argument('--expname',
+                    default='WTagsNHctrl',
+                    type=str)
+parser.add_argument('--maxrun',
+                    default=97,
+                    type=int)
+parser.add_argument('--restart_file',
+                    default='None',
+                    type=str)
+parser.add_argument('--do_seasonal',
+                    default=False,
+                    type=bool)
+parser.add_argument('--debugoutput',
+                    default=False,
+                    type=bool)
+parser.add_argument('--convscheme',
+                    default='SIMPLE_BETTS_MILLER',
+                    type=str)
+
+args = parser.parse_args()
+print(args)
+
+if args.qflux_amp==0.0:
+    do_qflux=False
+else:
+    do_qflux=True
+
+if args.warmpool_amp==0.0:
+    do_warmpool=False
+else:
+    do_warmpool=True
+
 #note default resolution is T42
-NCORES = 64
-output_len = 30
+NCORES = args.NCORES
+print(NCORES)
+if args.debugoutput:
+    output_len = 5
+else:
+    output_len = 30
 base_dir = os.path.dirname(os.path.realpath(__file__))
 # a CodeBase can be a directory on the computer,
 # useful for iterative development
@@ -28,27 +92,23 @@ if gen_Frierson_levels:
 
     print(vert_coordinate_list)
     print(len(levs))
-# or it can point to a specific git repo and commit id.
-# This method should ensure future, independent, reproducibility of results.
-# cb = DryCodeBase.from_repo(repo='https://github.com/isca/isca', commit='isca1.1')
-
-# compilation depends on computer specific settings.  The $GFDL_ENV
-# environment variable is used to determine which `$GFDL_BASE/src/extra/env` file
-# is used to load the correct compilers.  The env file is always loaded from
-# $GFDL_BASE and not the checked out git repo.
-
-cb.compile()  # compile the source code to working directory $GFDL_WORK/codebase
 
 # create an Experiment object to handle the configuration of model parameters
 # and output diagnostics
 externalFieldTablePath='/home/rfajber/Isca/exp/RF/input/field_table'
-exp = Experiment('S0', codebase=cb,
+
+exp = Experiment(args.expname,
+                 codebase=cb,
                  externalFieldTablePath=externalFieldTablePath)
 
 #Tell model how to write diagnostics
 diag = DiagTable()
-#diag.add_file('atmos_4xday', 6)
-diag.add_file('atmos_monthly', 30, 'days', time_units='days')
+if args.hroutput:
+    diag.add_file('atmos_4xday', 6)
+if args.debugoutput:
+    diag.add_file('atmos_monthly', 1, 'days', time_units='days')
+else:
+    diag.add_file('atmos_monthly', 30, 'days', time_units='days')
 
 #Tell model which diagnostics to write
 diag.add_field('dynamics', 'ps', time_avg=True)
@@ -58,59 +118,21 @@ diag.add_field('atmosphere', 'precipitation', time_avg=True)
 diag.add_field('atmosphere', 'dt_qg_condensation', time_avg=True)
 diag.add_field('atmosphere', 'dt_qg_convection', time_avg=True)
 diag.add_field('atmosphere', 'dt_qg_diffusion', time_avg=True)
-# diag.add_field('atmosphere', 'dt_qgp', time_avg=True)
-# diag.add_field('atmosphere', 'dt_qgn', time_avg=True)
 diag.add_field('atmosphere', 'rh', time_avg=True)
 diag.add_field('mixed_layer', 't_surf', time_avg=True)
 diag.add_field('mixed_layer', 'flux_lhe', time_avg=True)
 diag.add_field('dynamics', 'ucomp', time_avg=True)
 diag.add_field('dynamics', 'vcomp', time_avg=True)
 diag.add_field('dynamics', 'temp', time_avg=True)
-#diag.add_field('dynamics', 'vor', time_avg=True)
-#diag.add_field('dynamics', 'div', time_avg=True)
 diag.add_field('dynamics', 'sphum', time_avg=True)
-diag.add_field('dynamics', 'wtag1', time_avg=True)
-diag.add_field('dynamics', 'wtag2', time_avg=True)
-diag.add_field('dynamics', 'wtag3', time_avg=True)
-diag.add_field('dynamics', 'wtag4', time_avg=True)
-diag.add_field('dynamics', 'wtag5', time_avg=True)
-diag.add_field('dynamics', 'wtag6', time_avg=True)
-diag.add_field('dynamics', 'wtag7', time_avg=True)
-diag.add_field('dynamics', 'wtag8', time_avg=True)
 diag.add_field('dynamics', 'sphum_v', time_avg=True)
-diag.add_field('dynamics', 'wtag1_v', time_avg=True)
-diag.add_field('dynamics', 'wtag2_v', time_avg=True)
-diag.add_field('dynamics', 'wtag3_v', time_avg=True)
-diag.add_field('dynamics', 'wtag4_v', time_avg=True)
-diag.add_field('dynamics', 'wtag5_v', time_avg=True)
-diag.add_field('dynamics', 'wtag6_v', time_avg=True)
-diag.add_field('dynamics', 'wtag7_v', time_avg=True)
-diag.add_field('dynamics', 'wtag8_v', time_avg=True)
 diag.add_field('dynamics', 'sphum_w', time_avg=True)
-diag.add_field('dynamics', 'wtag1_w', time_avg=True)
-diag.add_field('dynamics', 'wtag2_w', time_avg=True)
-diag.add_field('dynamics', 'wtag3_w', time_avg=True)
-diag.add_field('dynamics', 'wtag4_w', time_avg=True)
-diag.add_field('dynamics', 'wtag5_w', time_avg=True)
-diag.add_field('dynamics', 'wtag6_w', time_avg=True)
-diag.add_field('dynamics', 'wtag7_w', time_avg=True)
-diag.add_field('dynamics', 'wtag8_w', time_avg=True)
-diag.add_field('atmosphere', 'wtag1_sink', time_avg=True)
-diag.add_field('atmosphere', 'wtag2_sink', time_avg=True)
-diag.add_field('atmosphere', 'wtag3_sink', time_avg=True)
-diag.add_field('atmosphere', 'wtag4_sink', time_avg=True)
-diag.add_field('atmosphere', 'wtag5_sink', time_avg=True)
-diag.add_field('atmosphere', 'wtag6_sink', time_avg=True)
-diag.add_field('atmosphere', 'wtag7_sink', time_avg=True)
-diag.add_field('atmosphere', 'wtag8_sink', time_avg=True)
-diag.add_field('atmosphere', 'wtag1_src', time_avg=True)
-diag.add_field('atmosphere', 'wtag2_src', time_avg=True)
-diag.add_field('atmosphere', 'wtag3_src', time_avg=True)
-diag.add_field('atmosphere', 'wtag4_src', time_avg=True)
-diag.add_field('atmosphere', 'wtag5_src', time_avg=True)
-diag.add_field('atmosphere', 'wtag6_src', time_avg=True)
-diag.add_field('atmosphere', 'wtag7_src', time_avg=True)
-diag.add_field('atmosphere', 'wtag8_src', time_avg=True)
+for i in range(1,9):
+    diag.add_field('dynamics', f'wtag{i}', time_avg=True)
+    diag.add_field('dynamics', f'wtag{i}_v', time_avg=True)
+    diag.add_field('dynamics', f'wtag{i}_w', time_avg=True)
+    diag.add_field('atmosphere', f'wtag{i}_sink', time_avg=True)
+    diag.add_field('atmosphere', f'wtag{i}_src', time_avg=True)
 
 exp.diag_table = diag
 
@@ -139,14 +161,14 @@ exp.namelist = namelist = Namelist({
         'roughness_heat':3.21e-05,
         'roughness_moist':3.21e-05,                
         'two_stream_gray': True,     #Use grey radiation
-        'convection_scheme': 'SIMPLE_BETTS_MILLER', #Use the simple Betts Miller convection scheme from Frierson
+        'convection_scheme': args.convscheme, #Use the simple Betts Miller convection scheme from Frierson
     },
 
     'vert_turb_driver_nml': {
         'do_mellor_yamada': False,     # default: True
         'do_diffusivity': True,        # default: False
         'do_simple': True,             # default: False
-        'constant_gust': 0.0,          # default: 1.0
+        'constant_gust': 1.0,          # default: 1.0
         'use_tau': False
     },
     
@@ -173,12 +195,20 @@ exp.namelist = namelist = Namelist({
         'evaporation':True,   
         'depth': 2.5,                          #Depth of mixed layer used
         'albedo_value': 0.31,                  #Albedo value used             
+        'do_qflux':do_qflux,
+        'do_warmpool':do_warmpool,
+    },
+
+    'qflux_nml':{
+        'qflux_amp':args.qflux_amp, 
+        'warmpool_amp':args.warmpool_amp, 
     },
 
     'qe_moist_convection_nml': {
-        'rhbm':0.7,
+        'rhbm':args.rhbm,
         'Tmin':160.,
-        'Tmax':350.   
+        'Tmax':350.,
+        'tau_bm':args.tau_bm,   
     },
 
     'betts_miller_nml': {
@@ -204,9 +234,9 @@ exp.namelist = namelist = Namelist({
     },
 
     'two_stream_gray_rad_nml': {
-        'rad_scheme': 'frierson',            #Select radiation scheme to use, which in this case is Frierson
-        'do_seasonal': False,                #do_seasonal=false uses the p2 insolation profile from Frierson 2006. do_seasonal=True uses the GFDL astronomy module to calculate seasonally-varying insolation.
-        'atm_abs': 0.2,                      # default: 0.0        
+        'rad_scheme': 'geen',            #Select radiation scheme to use, which in this case is Frierson
+        'do_seasonal': args.do_seasonal,                #do_seasonal=false uses the p2 insolation profile from Frierson 2006. do_seasonal=True uses the GFDL astronomy module to calculate seasonally-varying insolation.
+        'carbon_conc':args.carbon_conc,
     },
 
     # FMS Framework configuration
@@ -215,17 +245,17 @@ exp.namelist = namelist = Namelist({
     },
 
     'fms_nml': {
-        'domains_stack_size': 12000000                        # default: 0
+        'domains_stack_size': 120000                        # default: 0
     },
 
     'fms_io_nml': {
-        'threading_write': 'single',                         # default: multi
-        'fileset_write': 'single',                           # default: multi
+        'threading_write': 'multi',                         # default: multi
+        'fileset_write': 'multi',                           # default: multi
     },
 
     'spectral_dynamics_nml': {
         'damping_order': 8,             
-#        'damping_option': 'exponential_cutoff',
+        'damping_option': 'exponential_cutoff',
         'water_correction_limit': 200.e2,
         'reference_sea_level_press':1.0e5,
         'valid_range_t':[100.,800.],
@@ -241,13 +271,21 @@ exp.namelist = namelist = Namelist({
 
 })
 
-exp.set_resolution('T85',numlevs)
+exp.set_resolution(args.resolution,numlevs)
 overwrite=False
-# start from something already spun up so that we only have to spinup the tags, which should be ~30 days ish
-# this is good for diagnosing tendencies
-restart_file='/home/rfajber/restarts_save/A3.year5.nc'
-#Lets do a run!
+
 if __name__=="__main__":
-    exp.run(1, use_restart=False, num_cores=NCORES)
-    for i in range(2,100):
+
+    if args.restart_file=='None':
+        exp.run(1,
+                use_restart=False,
+                num_cores=NCORES)
+    else:
+        restart_file=f'/project/def-rfajber/rfajber/RESTARTS/{args.restart_file}'
+        exp.run(1,
+                use_restart=True,
+                restart_file=restart_file,
+                num_cores=NCORES)
+        
+    for i in range(2,args.maxrun):
         exp.run(i, num_cores=NCORES)

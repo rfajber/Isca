@@ -257,9 +257,9 @@ else
    call hs_forcing_init(get_axis_id(), Time, rad_lonb_2d, rad_latb_2d, rad_lat_2d)
 endif
 
-! if (reset_water_tags) then 
-!   grid_tracers(:,:,:,1,2:num_tracers)=0.0
-! end if 
+if (reset_water_tags) then 
+  grid_tracers(:,:,:,1,2:num_tracers)=0.0
+end if 
 
 module_is_initialized = .true.
 
@@ -329,7 +329,7 @@ if (water_tag) then
   end do  
   
   grid_tracers(:,:,:,future,2:num_tracers) = grid_tracers(:,:,:,future,2:num_tracers) * & 
-  spread( grid_tracers(:,:,:,future,1) / ( sum(grid_tracers(:,:,:,future,2:num_tracers),4) + 1e-6 ), 4, num_tracers-1)
+  spread( grid_tracers(:,:,:,future,1) / ( sum(grid_tracers(:,:,:,future,2:num_tracers),4) + 1.0e-9 ), 4, num_tracers-1)
 
 end if 
 
