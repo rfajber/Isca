@@ -3,31 +3,17 @@ import numpy as np
 from isca import DryCodeBase, DiagTable, Experiment, Namelist, GFDL_BASE
 
 NCORES = 32
-RESOLUTION = 'T85', 25  # T42 horizontal resolution, 25 levels in pressure
+RESOLUTION = 'T85', 20  # T42 horizontal resolution, 25 levels in pressure
 
-# a CodeBase can be a directory on the computer,
-# useful for iterative development
 cb = DryCodeBase.from_directory(GFDL_BASE)
 
-# or it can point to a specific git repo and commit id.
-# This method should ensure future, independent, reproducibility of results.
-# cb = DryCodeBase.from_repo(repo='https://github.com/isca/isca', commit='isca1.1')
-
-# compilation depends on computer specific settings.  The $GFDL_ENV
-# environment variable is used to determine which `$GFDL_BASE/src/extra/env` file
-# is used to load the correct compilers.  The env file is always loaded from
-# $GFDL_BASE and not the checked out git repo.
-
 cb.compile()  # compile the source code to working directory $GFDL_WORK/codebase
-
-# create an Experiment object to handle the configuration of model parameters
-# and output diagnostics
 
 exp_name = 'held_suarez_default'
 exp = Experiment(exp_name, codebase=cb)
 
 #Tell model how to write diagnostics
-diag = DiagTable()
+diag = isca.DiagTable()
 diag.add_file('4xday', 6)
 #Tell model which diagnostics to write
 diag.add_field('dynamics', 'ps', time_avg=True)
@@ -38,6 +24,7 @@ diag.add_field('dynamics', 'vcomp', time_avg=True)
 diag.add_field('dynamics', 'temp', time_avg=True)
 diag.add_field('dynamics', 'vor', time_avg=True)
 diag.add_field('dynamics', 'div', time_avg=True)
+diag.add_field('dynamics', 'zfull', time_avg=True)
 
 exp.diag_table = diag
 
@@ -61,7 +48,7 @@ namelist = Namelist({
         'reference_sea_level_press': 1.0e5,                  # default: 101325
         'valid_range_t'           : [100., 800.],           # default: (100, 500)
         'initial_sphum'           : 0.0,                  # default: 0
-        'vert_coord_option'       : 'uneven_sigma',         # default: 'even_sigma'
+        'vert_coord_option'       : 'even_sigma',         # default: 'even_sigma'
         'scale_heights': 6.0,
         'exponent': 7.5,
         'surf_res': 0.5
@@ -104,5 +91,5 @@ exp.set_resolution(*RESOLUTION)
 #Lets do a run!
 if __name__ == '__main__':
     exp.run(1, num_cores=NCORES, use_restart=False)
-    for i in range(2, 13):
+    for i in range(2, 6):
         exp.run(i, num_cores=NCORES)  # use the restart i-1 by default

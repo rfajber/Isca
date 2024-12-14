@@ -1,6 +1,8 @@
+# Run a parameter sweep of the Held Suarez model
+# by varying the rotation rate from 1% to 1000% of Earth's rot rate
 import numpy as np
-
-from isca import DryCodeBase, DiagTable, Experiment, Namelist, GFDL_BASE
+from isca import Experiment, DryCodeBase, FailedRunError, GFDL_BASE, DiagTable, Namelist
+from isca.util import exp_progress
 
 NCORES = 32
 RESOLUTION = 'T85', 25  # T42 horizontal resolution, 25 levels in pressure
@@ -35,9 +37,12 @@ diag.add_field('dynamics', 'bk')
 diag.add_field('dynamics', 'pk')
 diag.add_field('dynamics', 'ucomp', time_avg=True)
 diag.add_field('dynamics', 'vcomp', time_avg=True)
+diag.add_field('dynamics', 'omega', time_avg=True)
+diag.add_field('dynamics', 'slp', time_avg=True)
 diag.add_field('dynamics', 'temp', time_avg=True)
 diag.add_field('dynamics', 'vor', time_avg=True)
 diag.add_field('dynamics', 'div', time_avg=True)
+diag.add_field('dynamics', 'height', time_avg=True)
 
 exp.diag_table = diag
 
@@ -101,8 +106,29 @@ namelist = Namelist({
 exp.namelist = namelist
 exp.set_resolution(*RESOLUTION)
 
-#Lets do a run!
-if __name__ == '__main__':
-    exp.run(1, num_cores=NCORES, use_restart=False)
-    for i in range(2, 13):
-        exp.run(i, num_cores=NCORES)  # use the restart i-1 by default
+cb = DryCodeBase.from_directory(GFDL_BASE)
+
+delvs=[2.5, 5, 7.5, 10, 15, 20]
+tzeros=[325, 320, 317, 315, 302.5, 295]
+
+for delv,tzero in zip(delvs,tzeros):
+    exp_name = f'hs_delv_{delv}_tzero_{tzero}' 
+    exp = Experiment(exp_name, codebase=cb)
+    exp.namelist = namelist.copy()
+    exp.diag_table = diag
+
+    exp.update_namelist({'hs_forcing_nml': {'t_zero': tzero,
+                                            'delv': delv}})
+    try:
+        # run with a progress bar with description showing omega
+#        with exp_progress(exp, description='o%.0f d{day}' % s) as pbar:
+        exp.run(1, use_restart=False, num_cores=NCORES)
+
+        for n in range(2, 11):
+ #           with exp_progress(exp, description='o%.0f d{day}' % s) as pbar:
+            exp.run(n, use_restart=True, num_cores=NCORES)
+
+    except FailedRunError as e:
+        # don't let a crash get in the way of good science
+        # (we could try and reduce timestep here if we wanted to be smarter)
+        continue

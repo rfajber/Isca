@@ -53,7 +53,8 @@ module vert_diff_mod
              gcm_vert_diff_down,          &
              gcm_vert_diff_up,            &
              vert_diff,                   &
-             surf_diff_type
+             surf_diff_type, &
+             water_tag_vert_diff
    
    !=======================================================================
    
@@ -75,6 +76,9 @@ module vert_diff_mod
    
    
    real,    allocatable, dimension(:,:,:) :: e_global, f_t_global, f_q_global 
+
+   ! RFTT
+!   real, allocatable,dimension(:,:,:,:) :: f_tr_array
    
    ! storage compartment for tracer vert. diffusion options, and for f
    ! coefficient if necessary
@@ -127,6 +131,8 @@ module vert_diff_mod
    ! get the number of prognostic tracers
        call get_number_tracers( MODEL_ATMOS, num_prog=ntprog)
    
+   
+
    ! get the tracer number for specific humidity
        sphum = get_tracer_index( MODEL_ATMOS, 'sphum')
        mix_rat=get_tracer_index( MODEL_ATMOS, 'mix_rat')
@@ -164,6 +170,9 @@ module vert_diff_mod
        allocate(f_t_global (idim, jdim, kdim-1)) ; f_t_global = 0.0 
        allocate(f_q_global (idim, jdim, kdim-1)) ; f_q_global = 0.0
    
+      !RFTT
+!      allocate(f_tr_array (idim, jdim, kdim-1, ntprog)) ; f_tr_array = 0.0
+
        module_is_initialized = .true.
    
     endif
@@ -176,7 +185,7 @@ module vert_diff_mod
     allocate ( tracers(ntprog) )
     do n = 1,ntprog
        ! skip tracers diffusion if it is turned off in the field table
-       tracers(n)%do_vert_diff = .true. 
+       tracers(n)%do_vert_diff = .false. 
        if (query_method('diff_vert',MODEL_ATMOS,n,scheme)) then
           tracers(n)%do_vert_diff = (uppercase(scheme) /= 'NONE')
        endif
@@ -340,41 +349,43 @@ module vert_diff_mod
             e_n1(i,j) = e (i,j,kb-1)
     enddo
     enddo
+  
+    !RFTT
+   !  do n = 2,ntr
+   !     ! calculate f_tr, f_tr_delt_n1, delta_tr_n for this tracer
+   !     if(.not.tracers(n)%do_vert_diff) cycle ! skip non-diffusive tracers
+   !     call explicit_tend (mu, nu, tr(:,:,:,n), dt_tr(:,:,:,n))
+   !     call compute_f (dt_tr(:,:,:,n), b, c, g, f_tr)
+   !     f_tr_array(:,:,:,n) = f_tr
+   !     do j = 1,size(mu,2)
+   !     do i = 1,size(mu,1)
+   !        kb = nlev ; if(present(kbot)) kb=kbot(i,j)
+   !        f_tr_delt_n1(i,j) = f_tr (i,j,kb-1)*delt
+   !        delta_tr_n(i,j)   = dt_tr(i,j,kb,n)*delt
+   !     enddo
+   !     enddo
    
-    do n = 1,ntr
-       ! calculate f_tr, f_tr_delt_n1, delta_tr_n for this tracer
-       if(.not.tracers(n)%do_vert_diff) cycle ! skip non-diffusive tracers
-       call explicit_tend (mu, nu, tr(:,:,:,n), dt_tr(:,:,:,n))
-       call compute_f (dt_tr(:,:,:,n), b, c, g, f_tr)
-       do j = 1,size(mu,2)
-       do i = 1,size(mu,1)
-          kb = nlev ; if(present(kbot)) kb=kbot(i,j)
-          f_tr_delt_n1(i,j) = f_tr (i,j,kb-1)*delt
-          delta_tr_n(i,j)   = dt_tr(i,j,kb,n)*delt
-       enddo
-       enddo
+      !  ! store information needed by flux_exchange module
+      !  Tri_surf%delta_tr(is:ie,js:je,n) = &
+      !       delta_tr_n(:,:) + mu_delt_n(:,:)*nu_n(:,:)*f_tr_delt_n1(:,:)
+      !  Tri_surf%dflux_tr(is:ie,js:je,n) = -nu_n(:,:)*(1.0 - e_n1(:,:))
    
-       ! store information needed by flux_exchange module
-       Tri_surf%delta_tr(is:ie,js:je,n) = &
-            delta_tr_n(:,:) + mu_delt_n(:,:)*nu_n(:,:)*f_tr_delt_n1(:,:)
-       Tri_surf%dflux_tr(is:ie,js:je,n) = -nu_n(:,:)*(1.0 - e_n1(:,:))
-   
-       if(tracers(n)%do_surf_exch) then
-          ! store f for future use on upward sweep
-          tracers(n)%f(is:ie,js:je,:) = f_tr(:,:,:)
-       else
-          ! upward sweep of tridaigonal solver for tracers that do not exchange 
-          ! with surface
-          flux_tr  (:,:) = 0.0 ! surface flux of tracer
-          dflux_dtr(:,:) = 0.0 ! d(sfc flux)/d(tr atm)
-          call diff_surface ( &
-               mu_delt_n(:,:), nu_n(:,:), e_n1(:,:), f_tr_delt_n1(:,:), &
-               dflux_dtr(:,:), flux_tr(:,:), 1.0, delta_tr_n(:,:) )
-          call vert_diff_up ( &
-               delt, e(:,:,:), f_tr(:,:,:), delta_tr_n(:,:), dt_tr(:,:,:,n), &
-               kbot )
-       endif
-    enddo
+      !  if(tracers(n)%do_surf_exch) then
+      !     ! store f for future use on upward sweep
+      !     tracers(n)%f(is:ie,js:je,:) = f_tr(:,:,:)
+      !  else
+      !     ! upward sweep of tridaigonal solver for tracers that do not exchange 
+      !     ! with surface
+      !     flux_tr  (:,:) = 0.0 ! surface flux of tracer
+      !     dflux_dtr(:,:) = 0.0 ! d(sfc flux)/d(tr atm)
+      !     call diff_surface ( &
+      !          mu_delt_n(:,:), nu_n(:,:), e_n1(:,:), f_tr_delt_n1(:,:), &
+      !          dflux_dtr(:,:), flux_tr(:,:), 1.0, delta_tr_n(:,:) )
+      !     call vert_diff_up ( &
+      !          delt, e(:,:,:), f_tr(:,:,:), delta_tr_n(:,:), dt_tr(:,:,:,n), &
+      !          kbot )
+      !  endif
+    !enddo
    
    ! NOTE: actually e used in the tracer calculations above, and e_global
    ! calculated in the vert_diff_down_2 below are the same, since they only
@@ -454,18 +465,33 @@ module vert_diff_mod
    !checksums! write(outunit,'("CHECKSUM::",A32," = ",Z20)')'dt_q',mpp_chksum(dt_q)
    
     !modify slightly for the water tagging code 
+    !RFTT - force all tracers to get passed through vert diff_up
+    ! Tri_surf%delta_tr is modified before the
+   !  do n = 2,size(dt_tr,4)
+   !    ! call vert_diff_up ( &
+   !    !    delt, e_global, f_tr(:,:,:), Tri_surf%delta_tr (is:ie,js:je,n), dt_tr(:,:,:,n), &
+   !    !          kbot )
 
-    do n = 1,size(dt_tr,4)
-       ! skip tracers if diffusion scheme turned off
-       if (tracers(n)%do_vert_diff.and.tracers(n)%do_surf_exch) then
-          call vert_diff_up (delt ,                           &
-                       e_global           (is:ie,js:je,:) ,   &
-                       f_q_global        (is:ie,js:je,:) , &
-!                       tracers(n)%f       (is:ie,js:je,:) ,   &
-                       Tri_surf%delta_tr  (is:ie,js:je,n) ,   &
-                       dt_tr(:,:,:,n), kbot )
-       endif
-    enddo
+   !    call vert_diff_up (delt ,                              &
+   !    e_global          (is:ie,js:je,:) , &
+   !    f_tr_array        (is:ie,js:je,:,n) , &
+   !    Tri_surf%delta_tr (is:ie,js:je,n) ,                      &
+   !    dt_tr(:,:,:,n), &
+   !    kbot )
+   !  end do
+! skip tracers if diffusion scheme turned off
+!        if (tracers(n)%do_vert_diff.and.tracers(n)%do_surf_exch) then
+!           call vert_diff_up (delt ,                           &
+!                        e_global           (is:ie,js:je,:) ,   &
+!                        f_q_global        (is:ie,js:je,:) , &
+! !                       tracers(n)%f       (is:ie,js:je,:) ,   &
+!                        Tri_surf%delta_tr  (is:ie,js:je,n) ,   &
+!                        dt_tr(:,:,:,n), kbot )
+      !  endif
+
+   
+
+!    enddo
    
    end subroutine gcm_vert_diff_up
    
@@ -1088,4 +1114,51 @@ module vert_diff_mod
    
    !#######################################################################
    
+   subroutine water_tag_vert_diff (delt, diff, p_half, p_full, z_full, t, q, tr, dt_tr, delta_tr_n, kbot)
+   
+      real,    intent(in)                        :: delt
+      real,    intent(in)   , dimension(:,:,:,:) :: tr
+      real,    intent(inout), dimension(:,:,:,:) :: dt_tr
+      
+      real,    intent(in)    , dimension(:,:,:) :: diff, p_half, p_full, z_full, t, q
+   
+      integer, intent(in)   , dimension(:,:), optional :: kbot
+ 
+      real, dimension(size(tr,1),size(tr,2),size(tr,4)) :: delta_tr_n
+      real, dimension(size(tr,1),size(tr,2),size(tr,3)-1) :: e, f
+      real, dimension(size(tr,1),size(tr,2),size(tr,3)) :: mu, nu, a, b, c, g
+      
+      integer :: i, j, kb, n, ntr, nlev
+      character(len=128) :: scheme
+      !-----------------------------------------------------------------------
+      
+       ! get the number of prognostic tracers 
+       ntr  = size(tr,4) ! number of prognostic tracers
+         
+       ! compute universal variables 
+       call compute_mu (p_half, mu)
+       call compute_nu (diff, p_half, p_full, z_full, t, q, nu) 
+       call compute_e (delt, mu, nu, e, a, b, c, g)
+        
+       ! loop over the water tags
+       do n = 2, ntr
+
+         ! explicit step
+         call explicit_tend (mu, nu, tr(:,:,:,n), dt_tr(:,:,:,n))
+         call compute_f (dt_tr(:,:,:,n), b, c, g, f)
+
+         ! surface fluxes computed outside this routine,
+         ! passed in via Tri_surf%delta_tr
+
+         ! implifict questions  
+         call vert_diff_up (delt, e, f, delta_tr_n(:,:,n), dt_tr(:,:,:,n), kbot)
+
+      end do
+      
+      !-----------------------------------------------------------------------
+      
+      end subroutine water_tag_vert_diff
+      
+!#######################################################################
+      
    end module vert_diff_mod

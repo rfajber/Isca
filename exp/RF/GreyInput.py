@@ -114,19 +114,42 @@ else:
 diag.add_field('dynamics', 'ps', time_avg=True)
 diag.add_field('dynamics', 'bk')
 diag.add_field('dynamics', 'pk')
+
+# dynamics
+diag.add_field('dynamics', 'ucomp', time_avg=True)
+diag.add_field('dynamics', 'vcomp', time_avg=True)
+diag.add_field('dynamics', 'omega',  time_avg=True) #wap
+diag.add_field('dynamics', 'height', time_avg=True) #zg
+diag.add_field('dynamics', 'temp', time_avg=True)
+diag.add_field('dynamics', 'ucomp_sq', time_avg=True)
+diag.add_field('dynamics', 'ucomp_vcomp', time_avg=True)
+diag.add_field('dynamics', 'vcomp_sq', time_avg=True)
+diag.add_field('dynamics', 'omega_sq', time_avg=True)
+diag.add_field('atmosphere',   'flux_u', files=['atmos_monthly'], time_avg=True) #tauu - zonal component of stress
+diag.add_field('atmosphere',   'flux_v', files=['atmos_monthly'], time_avg=True) #tauv
+
+# surface and energy budget 
+diag.add_field('mixed_layer', 't_surf', time_avg=True)
+diag.add_field('mixed_layer', 'flux_lhe', time_avg=True)
+diag.add_field('mixed_layer', 'flux_t', time_avg=True)
+diag.add_field('two_stream','tdt_rad',time_avg=True)
+diag.add_field('two_stream','tdt_solar',time_avg=True)
+diag.add_field('two_stream','flux_lw',time_avg=True)
+diag.add_field('two_stream','flux_sw',time_avg=True)
+
+# moisture related
 diag.add_field('atmosphere', 'precipitation', time_avg=True)
+diag.add_field('atmosphere', 'condensation_rain', time_avg=True) #pr-pc
 diag.add_field('atmosphere', 'dt_qg_condensation', time_avg=True)
 diag.add_field('atmosphere', 'dt_qg_convection', time_avg=True)
 diag.add_field('atmosphere', 'dt_qg_diffusion', time_avg=True)
+diag.add_field('atmosphere', 'dt_tg_diffusion', time_avg=True)
 diag.add_field('atmosphere', 'rh', time_avg=True)
-diag.add_field('mixed_layer', 't_surf', time_avg=True)
-diag.add_field('mixed_layer', 'flux_lhe', time_avg=True)
-diag.add_field('dynamics', 'ucomp', time_avg=True)
-diag.add_field('dynamics', 'vcomp', time_avg=True)
-diag.add_field('dynamics', 'temp', time_avg=True)
 diag.add_field('dynamics', 'sphum', time_avg=True)
 diag.add_field('dynamics', 'sphum_v', time_avg=True)
 diag.add_field('dynamics', 'sphum_w', time_avg=True)
+
+# tag related 
 for i in range(1,9):
     diag.add_field('dynamics', f'wtag{i}', time_avg=True)
     diag.add_field('dynamics', f'wtag{i}_v', time_avg=True)

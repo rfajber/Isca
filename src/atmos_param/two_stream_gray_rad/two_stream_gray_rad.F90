@@ -155,7 +155,8 @@ namelist/two_stream_gray_rad_nml/ solar_constant, del_sol, &
 
 integer :: id_olr, id_swdn_sfc, id_swdn_toa, id_net_lw_surf, id_lwdn_sfc, id_lwup_sfc, &
            id_tdt_rad, id_tdt_solar, id_flux_rad, id_flux_lw, id_flux_sw, id_coszen, id_fracsun, &
-           id_lw_dtrans, id_lw_dtrans_win, id_sw_dtrans, id_co2
+           id_lw_dtrans, id_lw_dtrans_win, id_sw_dtrans, id_co2, &
+           id_flux_lw_toa, id_flux_lw_sfc, id_flux_sw_toa, id_flux_sw_sfc
 
 character(len=10), parameter :: mod_name = 'two_stream'
 
@@ -346,7 +347,24 @@ end select
     id_flux_sw = &
         register_diag_field ( mod_name, 'flux_sw', axes(half), Time, &
                'Net shortwave radiative flux (positive up)', &
+               'W/m^2', missing_value=missing_value               )                     
+
+    id_flux_lw_sfc = &
+        register_diag_field ( mod_name, 'flux_lw_sfc', axes(1:2), Time, &
+               'Net longwave radiative flux (positive up) sfc', &
                'W/m^2', missing_value=missing_value               )
+    id_flux_sw_sfc = &
+        register_diag_field ( mod_name, 'flux_sw_sfc', axes(1:2), Time, &
+               'Net shortwave radiative flux (positive up) sfc', &
+               'W/m^2', missing_value=missing_value               )                     
+    id_flux_lw_toa = &
+        register_diag_field ( mod_name, 'flux_lw_toa', axes(1:2), Time, &
+               'Net longwave radiative flux (positive up) toa', &
+               'W/m^2', missing_value=missing_value               )
+    id_flux_sw_toa = &
+        register_diag_field ( mod_name, 'flux_sw_toa', axes(1:2), Time, &
+               'Net shortwave radiative flux (positive up) toa', &
+               'W/m^2', missing_value=missing_value               )                     
 
     id_coszen  = &
                register_diag_field ( mod_name, 'coszen', axes(1:2), Time, &
@@ -758,9 +776,24 @@ endif
 if ( id_flux_lw > 0 ) then
    used = send_data ( id_flux_lw, lw_flux, Time_diag)
 endif
+!------- longwave radiative flux (at half levels) --------
 if ( id_flux_sw > 0 ) then
    used = send_data ( id_flux_sw, sw_flux, Time_diag)
 endif
+!------- radiative flux (at sfc and toa) --------
+if ( id_flux_lw_sfc > 0 ) then
+  used = send_data ( id_flux_lw_sfc, lw_flux(:,:,size(lw_flux)), Time_diag)
+endif
+if ( id_flux_sw_sfc > 0 ) then
+  used = send_data ( id_flux_sw_sfc, sw_flux(:,:,size(sw_flux)), Time_diag)
+endif
+if ( id_flux_lw_toa > 0 ) then
+  used = send_data ( id_flux_lw_toa, lw_flux(:,:,1), Time_diag)
+endif
+if ( id_flux_sw_toa> 0 ) then
+  used = send_data ( id_flux_sw_toa, sw_flux(:,:,1), Time_diag)
+endif
+
 !------- radiative transmissivities (at half levels) --------
 if ( id_lw_dtrans > 0 ) then
    used = send_data ( id_lw_dtrans, lw_dtrans, Time_diag)

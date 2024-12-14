@@ -15,7 +15,7 @@ use        time_manager_mod, only: time_type, get_time, operator( + )
 
 use    vert_turb_driver_mod, only: vert_turb_driver_init, vert_turb_driver, vert_turb_driver_end
 
-use           vert_diff_mod, only: vert_diff_init, gcm_vert_diff_down, gcm_vert_diff_up, vert_diff_end, surf_diff_type
+use           vert_diff_mod, only: vert_diff_init, gcm_vert_diff_down, gcm_vert_diff_up, vert_diff_end, surf_diff_type, water_tag_vert_diff
 
 use two_stream_gray_rad_mod, only: two_stream_gray_rad_init, two_stream_gray_rad_down, two_stream_gray_rad_up, two_stream_gray_rad_end
 
@@ -58,7 +58,7 @@ use  field_manager_mod, only: MODEL_ATMOS
 use rayleigh_bottom_drag_mod, only: rayleigh_bottom_drag_init, compute_rayleigh_bottom_drag
 
 !RFTT
-use tracer_tagging, only: tagged_tracers_init, tagged_tracers_end, water_tagged_tendencies
+! use tracer_tagging, only: tagged_tracers_init, tagged_tracers_end, water_tagged_tendencies
 
 #ifdef RRTM_NO_COMPILE
     ! RRTM_NO_COMPILE not included
@@ -169,7 +169,7 @@ real, allocatable, dimension(:,:    ) :: dt_bucket, filt   ! RG Add bucket
 
 !RFTT add tagged tracer variables
 logical :: water_tag
-real :: a_small_number = 1e-6
+real :: a_small_number = 1e-10
 
 real, allocatable, dimension(:,:)   ::                                        &
      z_surf,               &   ! surface height
@@ -317,6 +317,7 @@ integer :: num_tracers, ntr
 !RFTT
 real, allocatable, dimension(:,:,:,:) :: tracer_mask
 real, allocatable, dimension(:,:,:,:) :: sink, src
+real, allocatable, dimension(:,:,:) :: sinktmp, srctmp
 !    real, dimension(5) :: sn = (/-1.0, -0.5, 0.0, 0.5, 1.0/)
 !real, dimension(9) :: ln = (/0.0, 7.1808, 14.4775, 22.0243, 30., 38.6822, 48.5904, 61.0450, 90./)
 real, dimension(9) :: ln = (/-90.0, -48.5904, -30., -14.4775, 0.0, 14.4775, 30., 48.5904, 90./)
@@ -325,7 +326,7 @@ real, dimension(9) :: ln = (/-90.0, -48.5904, -30., -14.4775, 0.0, 14.4775, 30.,
 real, dimension(:), allocatable :: deg_lat
 !integer :: is,ie,js,je,nsphum,num_levels,num_tracers,j,ntr
 integer :: i,j 
-integer, dimension(:), allocatable :: id_tr_sink, id_tr_src
+integer, dimension(:), allocatable :: id_tr_sink, id_tr_src, id_tr_flux_surf
 
 
 !=================================================================================================================================
@@ -841,12 +842,15 @@ if (water_tag) then
   allocate(tracer_mask (is:ie,js:je,num_levels,num_tracers)); tracer_mask=0.0
   allocate(sink (is:ie,js:je,num_levels,num_tracers)); sink=0.0
   allocate(src (is:ie,js:je,num_levels,num_tracers)); src=0.0
+  allocate(sinktmp (is:ie,js:je,num_levels)); sinktmp=0.0
+  allocate(srctmp (is:ie,js:je,num_levels)); srctmp=0.0
 
   allocate(deg_lat(js:je))
   call get_deg_lat(deg_lat)
 
   allocate(id_tr_sink(num_tracers))
   allocate(id_tr_src(num_tracers))
+  allocate(id_tr_flux_surf(num_tracers))
 
 
   ! initialize variables
@@ -884,6 +888,7 @@ if (water_tag) then
   call get_tracer_names(MODEL_ATMOS, ntr, tname, longname, units)
   id_tr_sink(ntr) = register_diag_field(mod_name, trim(tname)//trim('_sink'), axes(1:3), Time, trim(longname)//trim(' sink'), trim(units)//trim('/s')) 
   id_tr_src(ntr) =  register_diag_field(mod_name, trim(tname)//trim('_src'),  axes(1:3), Time, trim(longname)//trim(' src'),  trim(units)//trim('/s')) 
+  id_tr_flux_surf(ntr) =  register_diag_field(mod_name, trim(tname)//trim('_flux_surf'),  axes(1:2), Time, trim(longname)//trim(' flux_surf'),  trim(units)//trim('/s')) 
   enddo        
 end if 
 
@@ -954,6 +959,30 @@ case(SIMPLE_BETTS_CONV)
    if(id_cape  > 0) used = send_data(id_cape, cape, Time)
    if(id_cin  > 0) used = send_data(id_cin, cin, Time)
 
+  !RFTT
+  !  if (water_tag) then
+  !   do ntr=2,num_tracers
+
+  !     srctmp=0.0
+  !     sinktmp=0.0
+
+  !     where ( (conv_dt_qg) .lt. 0)
+        
+  !       sinktmp = (conv_dt_qg) * grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
+
+  !     elsewhere
+
+  !       srctmp = (conv_dt_qg) * tracer_mask(:,:,:,ntr)
+
+  !     end where
+
+  !     src(:,:,:,ntr) = src(:,:,:,ntr) + srctmp
+  !     sink(:,:,:,ntr) =  sink(:,:,:,ntr) + sinktmp
+  !     dt_tracers(:,:,:,ntr) = dt_tracers(:,:,:,ntr) + srctmp + sinktmp
+
+  !     end do
+  ! end if 
+   
 case(FULL_BETTS_MILLER_CONV)
 
    call betts_miller (          delta_t,           tg(:,:,:,previous),       &
@@ -1062,8 +1091,34 @@ if (r_conv_scheme .ne. DRY_CONV) then
   if(id_cond_dt_tg > 0) used = send_data(id_cond_dt_tg, cond_dt_tg, Time)
   if(id_cond_rain  > 0) used = send_data(id_cond_rain, rain, Time)
   if(id_precip     > 0) used = send_data(id_precip, precip, Time)
-  
+
+  !RFTT
+  ! if (water_tag) then 
+  !   do ntr=2,num_tracers
+
+  !     srctmp=0.0
+  !     sinktmp=0.0
+
+  !     where ( (cond_dt_qg) .lt. 0)
+        
+  !       sinktmp = (cond_dt_qg) * grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
+
+  !     elsewhere
+
+  !       srctmp = (cond_dt_qg) * tracer_mask(:,:,:,ntr)
+
+  !     end where
+
+  !     src(:,:,:,ntr) = src(:,:,:,ntr) + srctmp
+  !     sink(:,:,:,ntr) =  sink(:,:,:,ntr) + sinktmp
+  !     dt_tracers(:,:,:,ntr) = dt_tracers(:,:,:,ntr) + srctmp + sinktmp
+
+  !   end do
+  ! end if 
+
 endif
+
+
 
 ! Call the simple cloud scheme in line with SPOOKIE-2 requirements
 ! Using start of time step variables
@@ -1181,42 +1236,8 @@ if(.not.gp_surface) then
   if(id_q_2m > 0) used = send_data(id_q_2m, q_2m, Time)
   if(id_rh_2m > 0) used = send_data(id_rh_2m, rh_2m*1e2, Time)
 
-  !RFTT update the tag tendencies
-!   if (water_tag) then
-! !    print*, z_half(0,0,num_levels,previous) - z_surf(0,0)
-!     call water_tagged_tendency_update_surf(&
-!     flux_q,& ! evaporative flux, in kg/s
-!     grid_tracers(:,:,:,previous,:),&
-!     ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV &
-! !    ( p_full(:,:,num_levels,previous) / ( RDGAS * tg(:,:,num_levels,previous) ) ) * (z_half(:,:,num_levels,previous) - z_surf)& ! mass of the bottom layer
-!     )
-! !    print *, p_half(0,32,num_levels+1,previous),  p_half(0,32,num_levels,previous) 
-! !    print *, ( p_full(0,0,num_levels,previous) / RDGAS * tg(0,0,num_levels,previous) ) * (z_half(0,0,num_levels,previous) - z_surf)
-!     do ntr=2,num_tracers
-!       where (flux_q .gt. 0.0) 
-!       dt_tracers(:,:,num_levels,ntr) = dt_tracers(:,:,num_levels,ntr) + &
-!       flux_q / ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV ) 
-!       end where 
-!     end do
-
-!     end if
 
 end if
-
-! RFTT - tagged tracer implementation block
-! if (water_tag) then
-!   call water_tagged_tendencies(&
-!     conv_dt_qg + cond_dt_qg, & ! physics tendency 
-!     grid_tracers(:,:,:,previous,:),&! grid tags
-!     Time,&
-!     flux_q,&
-!     ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV, &
-!     dt_tracers& ! grid tracer tendency
-!     )
-
-! end if 
-
-
 
 ! Now complete the radiation calculation by computing the upward and net fluxes.
 
@@ -1400,29 +1421,6 @@ if(turb) then
                               albedo(:,:))
    endif
    
-   ! RFTT - handling surface fluxes before they get passed to the diffusion scheme
-   if (water_tag) then 
-
-    do ntr=2,num_tracers
-
-      where (Tri_surf%delta_tr(:,:,nsphum) .lt. 0)
-
-      Tri_surf%delta_tr(:,:,ntr) = Tri_surf%delta_tr(:,:,ntr) + Tri_surf%delta_tr(:,:,nsphum) * &  
-      grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
-
-      elsewhere
-
-      Tri_surf%delta_tr(:,:,ntr) = Tri_surf%delta_tr(:,:,ntr) + tracer_mask(:,:,num_levels,ntr) * Tri_surf%delta_tr(:,:,nsphum)
-
-      end where 
-
-    end do
-
-    ! do ntr=2,num_tracers
-    !   Tri_surf%delta_tr(:,:,ntr) = Tri_surf%delta_tr(:,:,ntr) + Tri_surf%delta_tr(:,:,nsphum) * tracer_mask(:,:,num_levels,ntr)
-    ! end do
-   end if 
-
    call gcm_vert_diff_up (1, 1, delta_t, Tri_surf, dt_tg(:,:,:), dt_tracers(:,:,:,nsphum), dt_tracers(:,:,:,:))
 
    if(id_diff_dt_ug > 0) used = send_data(id_diff_dt_ug, dt_ug - non_diff_dt_ug, Time)
@@ -1430,6 +1428,55 @@ if(turb) then
    if(id_diff_dt_tg > 0) used = send_data(id_diff_dt_tg, dt_tg - non_diff_dt_tg, Time)
    if(id_diff_dt_qg > 0) used = send_data(id_diff_dt_qg, dt_tracers(:,:,:,nsphum) - non_diff_dt_qg, Time)
    if(id_diff_dt_qg_test > 0) used = send_data(id_diff_dt_qg_test, dt_tracers(:,:,:,5) - non_diff_dt_qg_test, Time)
+
+      ! RFTT - handling surface fluxes before they get passed to the diffusion scheme
+   if (water_tag) then 
+
+    ! setting the surface fluxes 
+
+    do ntr=2,num_tracers
+      Tri_surf%delta_tr(:,:,ntr) = 0.0
+      srctmp=0.0
+      sinktmp=0.0
+
+      where (Tri_surf%delta_tr(:,:,nsphum) .lt. 0)
+      ! where  ( (dt_tracers(:,:,num_levels,nsphum) - non_diff_dt_qg(:,:,num_levels) ) .lt. 0 )
+
+        ! sinktmp(:,:,num_levels) = (dt_tracers(:,:,num_levels,nsphum) - non_diff_dt_qg(:,:,num_levels) ) * &
+        ! grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
+        sinktmp(:,:,num_levels) = Tri_surf%delta_tr(:,:,nsphum) / delta_t * & 
+        grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
+
+      elsewhere
+
+        srctmp(:,:,num_levels) =  Tri_surf%delta_tr(:,:,nsphum) / delta_t * tracer_mask(:,:,num_levels,ntr)
+!         srctmp(:,:,num_levels) =  (dt_tracers(:,:,num_levels,nsphum) - non_diff_dt_qg(:,:,num_levels) ) * tracer_mask(:,:,num_levels,ntr)
+
+      end where
+
+    !   ! note difference in units between Tri_surf and dt_tracers 
+ 
+      src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + srctmp(:,:,num_levels) 
+      sink(:,:,num_levels,ntr) =  sink(:,:,num_levels,ntr) + sinktmp(:,:,num_levels) 
+      Tri_surf%delta_tr(:,:,ntr) = Tri_surf%delta_tr(:,:,ntr) + ( srctmp(:,:,num_levels) + sinktmp(:,:,num_levels) ) * delta_t
+!      dt_tracers(:,:,num_levels,ntr) = dt_tracers(:,:,num_levels,ntr) + srctmp(:,:,num_levels) + sinktmp(:,:,num_levels)
+
+    !   if(id_tr_sink(ntr) > 0) used = send_data(id_tr_flux_surf(ntr), Tri_surf%delta_tr(:,:,ntr) / delta_t, Time)
+
+    end do
+
+    ! apply vertical diffusion 
+    call water_tag_vert_diff(delta_t, &
+                          diff_t, p_half(:,:,:,current), &
+                          p_full(:,:,:,current), &
+                          z_full(:,:,:,current), &
+                          tg(:,:,:,previous), &
+                          grid_tracers(:,:,:,previous,nsphum), &
+                          grid_tracers(:,:,:,previous,:), &
+                          dt_tracers(:,:,:,:), &
+                          Tri_surf%delta_tr)
+
+  end if
 
 endif ! if(turb) then
 
@@ -1491,87 +1538,43 @@ endif
 ! end Add bucket section
 
 !RFTT
-  if (water_tag) then 
-    sink = 0.0
-    src = 0.0
-    
-    do ntr=2,num_tracers
+if (water_tag) then 
+  do ntr=2,num_tracers
 
+    dt_tracers(:,:,:,ntr) = 0.0
+  
+    srctmp=0.0
+    sinktmp=0.0
 
-      ! where (Tri_surf%delta_tr(:,:,ntr) .lt. 0)
-
-      ! sink(:,:,num_levels,ntr) = sink(:,:,num_levels,ntr) + Tri_surf%delta_tr(:,:,ntr) * &  
-      ! grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
-
-      ! elsewhere
-
-      ! src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + tracer_mask(:,:,num_levels,ntr) * Tri_surf%delta_tr(:,:,ntr)
-
-      ! end where 
+    where (non_diff_dt_qg .lt. 0)
+!    where (dt_tracers(:,:,:,nsphum) .lt. 0)
       
-      ! where (flux_q .lt. 0)
+      sinktmp = non_diff_dt_qg * grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
+!     sinktmp = dt_tracers(:,:,:,nsphum) * grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
 
-      !   sink(:,:,num_levels,ntr) =  sink(:,:,num_levels,ntr) + (flux_q) / &
-      !   ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV ) *  &
-      !   grid_tracers(:,:,num_levels,previous,ntr) / (grid_tracers(:,:,num_levels,previous,nsphum) + a_small_number)
+    elsewhere
 
-      ! elsewhere
+      srctmp = non_diff_dt_qg * tracer_mask(:,:,:,ntr)
+      !srctmp = dt_tracers(:,:,:,nsphum)* tracer_mask(:,:,:,ntr)
+    end where
 
-      !   src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + tracer_mask(:,:,num_levels,ntr) * &
-      !   flux_q / ( ( p_half(:,:,num_levels+1,previous) - p_half(:,:,num_levels,previous) ) / GRAV )
+    src(:,:,:,ntr) = src(:,:,:,ntr) + srctmp
+    sink(:,:,:,ntr) =  sink(:,:,:,ntr) + sinktmp
+    dt_tracers(:,:,:,ntr) = dt_tracers(:,:,:,ntr) + srctmp + sinktmp
 
-      ! end where
+    if(id_tr_sink(ntr) > 0) used = send_data(id_tr_sink(ntr), sink(:,:,:,ntr), Time)
+    if(id_tr_src(ntr) > 0) used = send_data(id_tr_src(ntr), src(:,:,:,ntr), Time)
 
-      where ( (conv_dt_qg) .lt. 0)
+  end do
+end if 
 
-        sink(:,:,:,ntr) =  sink(:,:,:,ntr) + (conv_dt_qg) *  &
-        grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
-
-      elsewhere
-
-         src(:,:,:,ntr) = src(:,:,:,ntr) + tracer_mask(:,:,:,ntr)*(conv_dt_qg)
-    
-      end where
-
-      where ( (cond_dt_qg) .lt. 0)
-
-        sink(:,:,:,ntr) =  sink(:,:,:,ntr) + (cond_dt_qg) *  &
-        grid_tracers(:,:,:,previous,ntr) / (grid_tracers(:,:,:,previous,nsphum) + a_small_number)
-
-      elsewhere
-
-         src(:,:,:,ntr) = src(:,:,:,ntr) + tracer_mask(:,:,:,ntr)*(cond_dt_qg)
-    
-      end where
-
-    dt_tracers(:,:,:,ntr) = dt_tracers(:,:,:,ntr) + src(:,:,:,ntr) + sink(:,:,:,ntr)
-
-    end do 
-    !
-
-    !enforce conservation!
-
-    ! sink(:,:,:,2:num_tracers) = sink(:,:,:,2:num_tracers) * &
-    ! spread( non_diff_dt_qg(:,:,:) / sum(sink(:,:,:,2:num_tracers),4) + a_small_number, 4, num_tracers-1  )
-
-    ! src(:,:,:,2:num_tracers) = src(:,:,:,2:num_tracers) * &
-    ! spread( non_diff_dt_qg(:,:,:) / sum(sink(:,:,:,2:num_tracers),4) + a_small_number, 4, num_tracers-1  )
-
-    ! loop through to set ouputs and dt_tracers
-    do ntr=2,num_tracers
-
-      where( Tri_surf%delta_tr(:,:,ntr) .gt. 0.0)
-        src(:,:,num_levels,ntr) = src(:,:,num_levels,ntr) + Tri_surf%delta_tr(:,:,ntr)/delta_t
-      elsewhere
-        sink(:,:,num_levels,ntr) = sink(:,:,num_levels,ntr) + Tri_surf%delta_tr(:,:,ntr)/delta_t
-      end where
-
-      if(id_tr_sink(ntr) > 0) used = send_data(id_tr_sink(ntr), sink(:,:,:,ntr), Time)
-      if(id_tr_src(ntr) > 0) used = send_data(id_tr_src(ntr), src(:,:,:,ntr), Time)
-
-    end do 
-
-  end if  
+  ! if (water_tag) then 
+  !   ! loop through to set ouputs 
+  !   do ntr=2,num_tracers
+  !     if(id_tr_sink(ntr) > 0) used = send_data(id_tr_sink(ntr), sink(:,:,:,ntr), Time)
+  !     if(id_tr_src(ntr) > 0) used = send_data(id_tr_src(ntr), src(:,:,:,ntr), Time)
+  !   end do 
+  ! end if  
 
 end subroutine idealized_moist_phys
 !=================================================================================================================================
